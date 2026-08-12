@@ -1,0 +1,2099 @@
+#pragma once
+
+//=============================================================================
+//=============================================================================
+
+#  if ASPEN_UPLO==UPPER
+#    define	HESYMV(x,...)	HESYMVu_##x
+#    define	DELTAX(x,...)	(+(x))
+#    define	isUPPER		( true )
+#    define	isLOWER		( false )
+#  else
+#    define	HESYMV(x,...)	HESYMVl_##x
+#    define	DELTAX(x,...)	(-(x))
+#    define	isUPPER		( false )
+#    define	isLOWER		( true )
+#  endif
+
+
+#define	_GY_			(4)
+#define W_RED_TYPE		(1)
+
+
+#if !defined(W_RED_TYPE)
+#  define W_RED_TYPE		(1)
+#endif
+#if __isINT__
+#  undef	W_RED_TYPE
+#  define	W_RED_TYPE	(2)
+#endif
+#if __isCOMPOUND_FORMAT__ || _is128BIT_FORMAT__ || _is256BIT_FORMAT__
+#  undef	W_RED_TYPE
+#  define	W_RED_TYPE	(0)
+#endif
+
+#if W_RED_TYPE==0
+#  define	KEEP_REPRO	(1)
+#  define	USE_ATOMIC	(0)
+#  define	LOOP_TRAN	(5)
+#endif
+#if W_RED_TYPE==1
+#  define	KEEP_REPRO	(1)
+#  define	USE_ATOMIC	(1)
+#  define	LOOP_TRAN	(0)
+#endif
+#if W_RED_TYPE==2
+#  define	KEEP_REPRO	(0)
+#  define	USE_ATOMIC	(1)
+#  define	LOOP_TRAN	(5)
+#endif
+
+#define	USE_STRICT_TICKET_CHECK		(0)
+#define	USE_STRONG_CONTROL_ORDER	(0)
+#define	USE_STRONG_TICKET_ORDER		(0)
+#define	USE_STRONG_ATOM_ORDER		(0)
+#define	USE_STRONG_LDST_ORDER		(0)
+#define	USE_CONFIRM_LDST		(0)
+#define	USE_WEAKER_ATOMIC		(0)
+
+#if KEEP_REPRO
+#  if USE_ATOMIC
+#    undef	USE_STRONG_ATOM_ORDER
+#    define	USE_STRONG_ATOM_ORDER	(1)
+#  else
+#    undef	USE_STRONG_TICKET_ORDER
+#    define	USE_STRONG_TICKET_ORDER	(1)
+#    undef	USE_STRONG_LDST_ORDER
+#    define	USE_STRONG_LDST_ORDER	(1)
+#  endif
+#else
+#  if USE_ATOMIC
+#    undef	USE_WEAKER_ATOMIC
+#    define	USE_WEAKER_ATOMIC	(1)
+#  endif
+#endif
+
+#if defined(GY2D)
+#  undef GY2D
+#endif
+#if W_RED_TYPE==0
+#  define	GY2D	2
+#endif
+#if W_RED_TYPE==1
+#  define	GY2D	4
+#endif
+#if W_RED_TYPE==2
+#  define	GY2D	10
+#endif
+
+//=============================================================================
+//=============================================================================
+
+#  include "reduce_in_block.h"
+#  include "atomic_ticket.h"
+
+//=============================================================================
+//=============================================================================
+
+#if defined(__CUDA_KERNEL__)
+// __global__
+#  define       __g_const__             __grid_constant__
+#elif defined(__CUDA_ARCH__)
+// __device__
+#  define       __g_const__             const
+#else
+// __host__
+#  define       __g_const__             const
+#endif
+
+
+template < class TYPE >
+__forceinline__  __host__ __device__ TYPE
+Ceil( TYPE const x, TYPE const y )
+{
+#if defined(__CUDA_KERNEL__) || defined(__CUDA_ARCH__)
+if constexpr ( std::is_same<TYPE, int>::value ) {
+  return INT_idiv( x+y-1, y );
+} else {
+  return ((x+y-1)/y);
+}
+#else
+  return ((x+y-1)/y);
+#endif
+}
+
+template < class TYPE >
+__forceinline__  __host__ __device__ TYPE
+Ceiling( TYPE const x, TYPE const y )
+{
+  return Ceil(x,y)*y;
+}
+
+template < class TYPE >
+__forceinline__ __device__ void
+ATOMIC_RED( TYPE * w_base, TYPE const R_Reg )
+{
+#if USE_WEAKER_ATOMIC
+#  if USE_STRONG_ATOM_ORDER
+  atomicRed_WEAK   ( w_base, R_Reg );
+#  else
+  atomicRed_WEAKER ( w_base, R_Reg );
+#  endif
+#else
+#  if USE_STRONG_ATOM_ORDER
+  atomicRed_STRONG ( w_base, R_Reg );
+#  else
+  atomicRed        ( w_base, R_Reg );
+#  endif
+#endif
+}
+
+template < class TYPE >
+__forceinline__ __device__ TYPE
+ATOMIC_EXCH( TYPE * w_base, TYPE const R_Reg )
+{
+  TYPE ret;
+#if USE_STRONG_ATOM_ORDER
+  ret = atomicExch_STRONG ( w_base, R_Reg );
+#else
+  ret = atomicExch        ( w_base, R_Reg );
+#endif
+  return ret;
+}
+
+template < class TYPE >
+__forceinline__ __host__ __device__ int
+get_BASEx( int const BASE ) {
+  uint const sizeof_T  = sizeof(TYPE);
+  uint const BASE_SIZE = sizeof(int);
+  uint const B         = (uint)BASE;
+  uint const bk        = (sizeof_T < BASE_SIZE ? BASE_SIZE/sizeof_T-1 : 0 );
+  uint const BASEx_    = B + bk - ((B-1) & bk); // bk+1 = 1, 2, 4, ... 2^p
+  int  const BASEx     = (int)BASEx_;
+  return BASEx;
+}
+
+static
+__forceinline__ __device__ int
+HESYMV(get_base) ( int const BASE, int const n, int const id )
+{
+  if ( isUPPER ) {
+    return max(n - BASE * id, 0);
+  } else {
+    return     BASE * id;
+  }
+}
+
+static
+__forceinline__ __device__ int2
+HESYMV(get_block_id_2D) ( int const GX, int const GY, int const id )
+{
+  int const td = INT_idiv( id, GY );
+  int const YY = isUPPER ? GX - 1 : 0;
+  int const t1 = YY - DELTAX(td);
+  int const t2 = id - td * GY;
+
+  int2 const ret = (int2){ t1, t2 };
+  return ret;
+}
+
+static
+__forceinline__ __device__ int2
+HESYMV(get_thread_id) ( int const BLOCK_SIZE )
+{
+  int  const threadIdx_y = INT_idiv( threadIdx.x, BLOCK_SIZE );
+  int  const threadIdx_x = threadIdx.x - threadIdx_y * BLOCK_SIZE;
+
+  int2 const ret = (int2){ threadIdx_x, threadIdx_y };
+  return ret;
+}
+
+static
+__forceinline__ __device__ void
+HESYMV(get_loop_info) ( bool const flag, int const BLOCK_SIZE, int const base, int const BASE, int const n, _Writable_ptr_(int) shmem_e_ )
+{
+  if ( !flag ) { shmem_e_[4] = 0x0; return; }
+
+  int _____  MASK  = 0x0;
+
+#if ASPEN_UPLO==UPPER
+  int  const k_e   = 0;
+  int  const j_e   = INT_floor( base, BLOCK_SIZE );
+  int  const i_e   = j_e + BLOCK_SIZE;
+
+  //        k_e     j_e   i_e
+  //        ^       ^     ^
+  //  |(ob)|<--X-->|b+(d)|.......
+  //                   ^        ^
+  //                   base     n
+  //
+  //  [base:base+BASE] * [0:fl(base,BLK)]
+  //     k_e < j_e
+  //  [base:base+BASE] * [fl(base,BLK):base]
+  //     j_e < base
+  //
+
+  shmem_e_[0] = k_e - DELTAX(BLOCK_SIZE);
+  shmem_e_[1] = k_e;
+  shmem_e_[2] = j_e;
+  shmem_e_[3] = i_e;
+
+  MASK |= ( i_e < k_e  ? 0x1 : 0x0 );
+  MASK |= ( k_e < j_e  ? 0x2 : 0x0 );
+  MASK |= ( j_e < base ? 0x4 : 0x0 );
+#  else
+  int  const i_e   = INT_floor( base+BASE, BLOCK_SIZE );
+  int  const j_e   = i_e + BLOCK_SIZE;
+  int  const k_e   = INT_floor( n, BLOCK_SIZE );
+
+  //    i_e  j_e     k_e
+  //    ^    ^       ^
+  //  |(d)+b|<--X-->|e+(ob)|
+  //       ^            ^ 
+  //       base+BASE    n
+  //
+  //  [base:base+BASE] * [fl(n,BLK):fl(n,BLK)]
+  //             if n % BLK == 0 => (ob) is empty and (e) in X
+  //                ==> k_e < n
+  //  [base:base+BASE] * [fl(base+BASE,BLK)+BLK:fl(n,BLK)]
+  //             if fl(base+BASE,BLK)+BLK < fl(n,BLK)
+  //  [base:base+BASE] * [fl(base+BASE,BLK):fl(base+BASE,BLK)+BLK]
+  //             if fl(base+BASE,BLK)+BLK > n => b equals e
+  //                ==> j_e <= n
+  //
+
+  shmem_e_[0] = k_e - DELTAX(BLOCK_SIZE);
+  shmem_e_[1] = k_e;
+  shmem_e_[2] = j_e;
+  shmem_e_[3] = i_e;
+
+  MASK |= ( k_e < n    ? 0x1 : 0x0 );
+  MASK |= ( j_e < k_e  ? 0x2 : 0x0 );
+  MASK |= ( j_e <= n   ? 0x4 : 0x0 );
+#endif
+
+  shmem_e_[4] = MASK;
+}
+
+//=============================================================================
+
+#define	USE_STRUCT_PRE_DO	(0)
+
+#if USE_STRUCT_PRE_DO
+template < class TYPE >
+struct PRE_DO_Args {
+                                    int  const   SGX;
+                                    int  const   SGY;
+#if KEEP_REPRO
+                                    int  _____ * const Tickets_;
+                                    int  const   ld_Tickets;
+                                    int  _____ * const Ticketf_;
+                                    int  const   ld_Ticketf;
+#endif
+                                    TYPE _____ * const work0_;
+                                    int  const   ld_work0;
+#if KEEP_REPRO
+                                    TYPE _____ * const work1_;
+#endif
+                                    int  const   n;
+                                    int  const   nTickets;
+                                    };
+#endif
+
+template < int ARCH, class TYPE >
+__global__ void
+API_private(HESYMV(kernel_PRE_DO)) (
+#if USE_STRUCT_PRE_DO
+#define	ARG(x)		(__ARG__.x)
+                                    PRE_DO_Args<TYPE> __g_const__  __ARG__
+#else
+#define	ARG(x)		(x)
+                                    int  __g_const__   SGX,
+                                    int  __g_const__   SGY,
+#if KEEP_REPRO
+                                    _Writable_ptr_(int) Tickets_,
+                                    int  __g_const__   ld_Tickets,
+                                    _Writable_ptr_(int) Ticketf_,
+                                    int  __g_const__   ld_Ticketf,
+#endif
+                                    _Writable_ptr_(TYPE) work0_,
+                                    int  __g_const__   ld_work0,
+#if KEEP_REPRO
+                                    _Writable_ptr_(TYPE) work1_,
+#endif
+                                    int  __g_const__   n,
+                                    int  __g_const__   nTickets
+#endif
+                                    )
+{
+  int  const GX       = gridDim.x;
+  int  const id       = blockIdx.x;
+  int  const pos0     = threadIdx.x + id*blockDim.x;
+  int  const step     = INT_imul(blockDim.x, GX);
+
+#if KEEP_REPRO
+#if USE_STRICT_TICKET_CHECK
+  extern __shared__ int initial_id[]; // [0:SGX-1]
+#endif
+  if ( ARG(Tickets_) != NULL ) {
+#if USE_STRICT_TICKET_CHECK
+#pragma unroll 4
+    for(int I=threadIdx.x; I<ARG(SGX); I+=blockDim.x) {
+      initial_id[I] = (isUPPER ? ((GX-1) - ((ARG(SGX)-I) + (GX-1)) % ARG(SGX)) : I);
+    }
+    __syncthreads();
+#endif
+
+    int  ___ * Tickets = ARG(Tickets_) + pos0;
+#pragma unroll 1
+    for ( int pos = pos0 ; pos < ARG(nTickets); pos += step ) {
+#pragma unroll 4
+      for(int I=0; I<ARG(SGX); I++) {
+#if USE_STRICT_TICKET_CHECK
+        Tickets[0] = initial_id[I];
+#else
+        Tickets[0] = -1;
+#endif
+        Tickets += ARG(ld_Tickets);
+      }
+      Tickets -= LONG_imul(ARG(SGX),ARG(ld_Tickets));
+      Tickets += step;
+    }
+  }
+
+  if ( ARG(Ticketf_) != NULL ) {
+    int  const nTicketf = GX;
+    int  ___ * Ticketf = ARG(Ticketf_) + pos0;
+#pragma unroll 1
+    for ( int pos = pos0 ; pos < nTicketf; pos += step ) {
+#pragma unroll 4
+      for(int I=0; I<ARG(SGY); I++) {
+#if USE_STRICT_TICKET_CHECK
+        Ticketf[0] = I;
+#else
+        Ticketf[0] = -1;
+#endif
+        Ticketf += ARG(ld_Ticketf);
+      }
+      Ticketf -= LONG_imul(ARG(SGY),ARG(ld_Ticketf));
+      Ticketf += step;
+    }
+  }
+#endif
+
+  TYPE * work0 = ARG(work0_) + pos0;
+#if KEEP_REPRO
+  TYPE * work1 = ARG(work1_) + pos0;
+#endif
+#pragma unroll 1
+  for ( int pos = pos0 ; pos < ARG(n); pos += step ) {
+
+    TYPE const zero = makeCONST < TYPE > ( 0 );
+
+#pragma unroll 4
+    for(int I=0; I<ARG(SGX); I++) {
+      work0[0] = zero;
+      work0 += ARG(ld_work0);
+    }
+    work0 -= LONG_imul(ARG(SGX),ARG(ld_work0));
+    work0 += step;
+
+#if KEEP_REPRO
+#pragma unroll 4
+    for(int I=0; I<ARG(SGY); I++) {
+      work1[0] = zero;
+      work1 += ARG(ld_work0);
+    }
+    work1 -= LONG_imul(ARG(SGY),ARG(ld_work0));
+    work1 += step;
+#endif
+
+  }
+#undef	ARG
+}
+
+//=============================================================================
+
+#define	USE_STRUCT_POST_DO	(0)
+
+#if USE_STRUCT_POST_DO
+template < class TYPE >
+struct POST_DO_Args {
+                                     int  const   SGX;
+                                     int  const   SGY;
+                                     TYPE const   alpha;
+                                     TYPE const   beta;
+                                     TYPE const * const work0_;
+                                     int  const   ld_work0;
+#if KEEP_REPRO
+                                     TYPE const * const work1_;
+#endif
+                                     TYPE _____ * const y;
+                                     int  const   n;
+                                     int  const   incy;
+};
+#endif
+
+template < int ARCH, class TYPE >
+__global__ void
+API_private(HESYMV(kernel_POST_DO)) (
+#if USE_STRUCT_POST_DO
+#define	ARG(x)		(__ARG__.x)
+                                     POST_DO_Args<TYPE> __g_const__  __ARG__
+#else
+#define	ARG(x)		(x)
+                                     int  __g_const__   SGX,
+                                     int  __g_const__   SGY,
+                                     TYPE __g_const__   alpha,
+                                     TYPE __g_const__   beta,
+                                     _ReadOnly_ptr_(TYPE) work0_,
+                                     int  __g_const__   ld_work0,
+#if KEEP_REPRO
+                                     _ReadOnly_ptr_(TYPE) work1_,
+#endif
+                                     _Writable_ptr_(TYPE) y,
+                                     int  __g_const__   n,
+                                     int  __g_const__   incy
+#endif
+                                     )
+{
+  int  const   id = blockIdx.x;
+  int  const   GX = gridDim.x;
+
+  int  const pos0  = threadIdx.x + id*blockDim.x;
+  int  const step  = INT_imul(blockDim.x, GX);
+  int  const stepy = INT_imul(step, ARG(incy));
+
+  TYPE const * work0 = (TYPE *)ARG(work0_) + pos0;
+#if KEEP_REPRO
+  TYPE const * work1 = (TYPE *)ARG(work1_) + pos0;
+#endif
+  TYPE _____ * yy = (TYPE *)ARG(y) + LONG_imul(ARG(incy),pos0);
+
+#pragma unroll 1
+  for ( int pos = pos0 ; pos < ARG(n); pos += step ) {
+
+    TYPE const zero = makeCONST < TYPE > ( 0 );
+
+    TYPE x_Reg = zero;
+#pragma unroll 4
+    for(int I=0; I<ARG(SGX); I++) {
+      x_Reg += work0[0];
+      work0 += ARG(ld_work0);
+    }
+    work0 -= LONG_imul(ARG(SGX),ARG(ld_work0));
+    work0 += step;
+
+#if KEEP_REPRO
+#pragma unroll 4
+    for(int I=0; I<ARG(SGY); I++) {
+      x_Reg += work1[0];
+      work1 += ARG(ld_work0);
+    }
+    work1 -= LONG_imul(ARG(SGY),ARG(ld_work0));
+    work1 += step;
+#endif
+
+    if ( ARG(beta) != zero ) {
+      TYPE y_Reg = yy[0];
+      y_Reg = fma( ARG(alpha), x_Reg, ARG(beta) * y_Reg );
+      yy[0] = y_Reg;
+    } else {
+      TYPE y_Reg = ARG(alpha) * x_Reg;
+      yy[0] = y_Reg;
+    }
+    yy += stepy;
+
+  }
+#undef	ARG
+}
+
+//=============================================================================
+
+//=============================================================================
+#define	USE_STRUCT_MAIN_DO	(0)
+
+#if USE_STRUCT_MAIN_DO
+template < class TYPE >
+struct MAIN_DO_Args {
+                                     int2 const   SG;
+                                     TYPE const * const a;
+                                     TYPE const * const x;
+                                     int  const   lda;
+                                     int  const   n;
+                                     int  const   incx;
+                                     TYPE _____ * const work0_;
+                                     int  const   ld_work0;
+#if KEEP_REPRO
+                                     TYPE _____ * const work1_;
+                                     int  _____ * const Tickets_;
+                                     int  const   ld_Tickets;
+                                     int  _____ * const Ticketf_;
+                                     int  const   ld_Ticketf;
+#endif
+                                     int  const   GX;
+};
+#endif
+
+template < int ARCH, class TYPE, int BLOCK_SIZE, int GY, int VX, int BASE, int MM >
+#if __isDOUBLE__
+__maxnreg__(168)
+#endif
+#if __isFLOAT__
+__maxnreg__(96)
+#endif
+__global__ void
+API_private(HESYMV(kernel_main_do)) (
+#if USE_STRUCT_MAIN_DO
+#define	ARG(x)		(__ARG__.x)
+                                     MAIN_DO_Args<TYPE> __g_const__  __ARG__
+#else
+#define	ARG(x)		(x)
+                                     int2 __g_const__   SG,
+                                     _ReadOnly_ptr_(TYPE) a,
+                                     _ReadOnly_ptr_(TYPE) x,
+                                     int  __g_const__   lda,
+                                     int  __g_const__   n,
+                                     int  __g_const__   incx,
+                                     _Writable_ptr_(TYPE) work0_,
+                                     int  __g_const__   ld_work0,
+#if KEEP_REPRO
+                                     _Writable_ptr_(TYPE) work1_,
+                                     _Writable_ptr_(int) Tickets_,
+                                     int  __g_const__   ld_Tickets,
+                                     _Writable_ptr_(int) Ticketf_,
+                                     int  __g_const__   ld_Ticketf,
+#endif
+                                     int  __g_const__   GX
+#endif
+                                     )
+{
+  //
+  // To tell the LLVM compiler *no* aliasing of two arrays
+  // However, __builtin_assume may not help the optimization for NVCC
+  //
+  __builtin_assume( ARG(a) != ARG(work0_) );
+  __builtin_assume( ARG(x) != ARG(work0_) );
+#if KEEP_REPRO
+  __builtin_assume( ARG(a) != ARG(work1_) );
+  __builtin_assume( ARG(x) != ARG(work1_) );
+  __builtin_assume( ARG(work0_) != ARG(work1_) );
+#endif
+
+  //
+  // constexpr, but implemented as const
+  //
+#define	BASE_over_VX	(BASE/VX)
+//  int  const BASE_over_VX = BASE / VX;
+
+  //
+  // macro definitions to switch some conditional branches
+  // whether matrix format is UPPER or LOWER triangluar.
+  //
+#  if ASPEN_UPLO==UPPER
+#    define	__isCOND_0(...)		( block_id > 0 )
+#    define	__isCOND_1(...)		( block_id == 0 && block_y == 0 )
+#    define	__isCOND_LOOP(i,...)	( (i) < i_e_0 )
+#    define	__isNot1st_LOOP(i,...)	( (i) >= i_s_0 )
+#    define	__isCOND_MASK(i,...)	( (i) < min(i_e_0, base) )
+#    define	__BLK_Y__		( block_y )
+#  else
+#    define	__isCOND_0(...)		( block_id < ARG(GX)-1 )
+#    define	__isCOND_1(...)		( block_id == ARG(GX)-1 && block_y == 0 )
+#    define	__isCOND_LOOP(i,...)	( (i) >= i_e_0 )
+#    define	__isNot1st_LOOP(i,...)	( (i) <= i_s_0 )
+#    define	__isCOND_MASK(i,...)	(( (i) < ARG(n) ) && ( (i) >= base+BASE ))
+#    define	__BLK_Y__		( block_y+1 )
+#  endif
+
+#  define	id		(blockIdx.x)
+  //
+  // compute the block id
+  // In the sense of CUDA, 1D thread model is applied.
+  // block_X must be defined in advance entering the main body
+  //
+  int2 const _block_info_ = HESYMV(get_block_id_2D) ( ARG(GX), GY, id );
+#  define	block_id	(_block_info_.x)
+#  define	block_y		(_block_info_.y)
+
+  if ( __isCOND_0() || __isCOND_1() ) {
+
+    //
+    // compute the thread id
+    // In the sense of CUDA, 1D thread model is applied to utilize all the
+    // cuda cores when threadIdx.x is less than a warp size (32).
+    //
+    int2 const _thread_Idx_ = HESYMV(get_thread_id) ( BLOCK_SIZE );
+#  define	threadIdx_x	(_thread_Idx_.x)
+#  define	threadIdx_y	(_thread_Idx_.y)
+
+    //
+    // some parameters to idetify the ID of each thread and the master
+    //
+#  define	local_id	((int)threadIdx_x)
+#  define	z_id		((int)threadIdx.x)
+
+    //
+    // some other constants
+    //
+#  define	THREADS		((int)BLOCK_SIZE*VX)
+
+    //
+    // macros for shared memory pointers
+    //
+#  define	__CAST_PTR__(x,t)	((reinterpret_cast<t*>(x)))
+#  define	__SHMEM_W_SIZE__	((BLOCK_SIZE*VX+BASE)*sizeof(TYPE))
+#  define	SHMEM_W_SIZE		(((__SHMEM_W_SIZE__-1)/sizeof(uint4)+1)*sizeof(uint4))
+#  define	SHMEM_raw(x)	(__CAST_PTR__(__shmem, unsigned char)[(x)])
+#  define	SHMEM_W(x)	(__CAST_PTR__(&SHMEM_raw(0), TYPE)[(x)])
+#  define	SHMEM_Z(x)	(__CAST_PTR__(&SHMEM_raw(0), TYPE)[(x)+THREADS])
+#  define	SHMEM_E(x)	(__CAST_PTR__(&SHMEM_raw(SHMEM_W_SIZE), int)[x])
+#  define	SHMEM_P(x)	(__CAST_PTR__(&SHMEM_raw(SHMEM_W_SIZE+sizeof(int)*8), void*)[x])
+#  define	__ID_A__	(0)
+#  define	__ID_X__	(1)
+#  define	__ID_Work0__	(2)
+#  define	__ID_Work1__	(3)
+#  define	__ID_TicketS__	(4)
+#  define	__ID_TicketF__	(5)
+
+    //
+    // macros for utilities
+    //
+#  define	__isNEXT_ACTIVE(i,...)	__isCOND_LOOP( i + DELTAX((int)BLOCK_STEP) )
+#  define	__isALREADY_PASSED(i,...)	__isNot1st_LOOP( i )
+#  define	CHECK_INDEX(x,...)	min( (x), (BASE_over_VX) )
+#  define	ITR_START		( isUPPER )
+
+    //
+    // base : the (top-left) diagonal position of the leading thread block.
+    //
+    int  const base  = HESYMV(get_base) ( BASE, ARG(n), isUPPER ? (ARG(GX) - block_id) : block_id );
+
+    //
+    // BASEx, BASE_ : particularly derived values from BASE
+    //
+    int  const BASEx = get_BASEx < TYPE > ( BASE );
+    int  const BASE_ = ( __isCOND_0() ? BASE : INT_irem(ARG(n)-1, BASE)+1 );
+
+    
+    //---------- {begin} load x into shared memeory ----------
+
+    {
+    //
+    // SHMEM_Z[0:BASE] must be preserved until diag is completed
+    //
+#if 1 || ((!__isHALF__) && (!__isINT16__))
+      if ( z_id < BASE_ ) {
+        TYPE const * xx = (TYPE *)ARG(x) + LONG_imul( base + z_id, ARG(incx) );
+#if GPU_ARCH >= Ampere
+        if constexpr ( sizeof(TYPE) >= 4 && sizeof(TYPE) <= 32 ) {
+          unsigned smem_addr = __cvta_generic_to_shared(&SHMEM_Z(z_id));
+          if constexpr ( sizeof(TYPE) == 4 || 
+                         sizeof(TYPE) == 8 ) {
+            asm volatile (
+                     "cp.async.ca.shared.global\t[%0], [%1], %2;\n\t"
+                 : : "r"(smem_addr), "l"(xx), "n"(sizeof(TYPE)) );
+          } else if constexpr ( sizeof(TYPE) == 16 ) {
+            asm volatile (
+                     "cp.async.cg.shared.global\t[%0], [%1], 16;\n\t"
+                 : : "r"(smem_addr), "l"(xx) );
+          } else if constexpr ( sizeof(TYPE) == 32 ) {
+            asm volatile (
+                     "cp.async.cg.shared.global\t[%0], [%1], 16;\n\t"
+                     "cp.async.cg.shared.global\t[%0+16], [%1+16], 16;\n\t"
+                 : : "r"(smem_addr), "l"(xx) );
+          }
+        } else
+#endif
+        {
+          SHMEM_Z(z_id) = xx[0]; // THREADS+[0:BASE]
+        }
+      }
+#else
+      {
+        bool const   flag = (ARG(incx) == 1 && 
+                             z_id * 2 < min(BASE_, ARG(n)-base) &&
+                             base % 2 == 0);
+        TYPE const * xx   = (TYPE *)ARG(x) + LONG_imul( base, ARG(incx) );
+        int  const   incz = z_id * ARG(incx);
+        if ( flag ) {
+          int32 const * zz    = __CAST_PTR__((TYPE *)xx, int32);
+          int32 const   z_Reg = zz[incz];
+          __CAST_PTR__(&SHMEM_Z(0), int32_t)[z_id] = z_Reg;
+        } else if ( z_id < BASE_ ) {
+          int16 const * zz    = __CAST_PTR__((TYPE *)xx, int16);
+          int16 const   z_Reg = zz[incz];
+          __CAST_PTR__(&SHMEM_Z(0), int16)[z_id]  = z_Reg;
+        }
+      }
+#endif
+    }
+
+    //---------- {end} load x into shared memeory ----------
+
+
+    //---------- {begin} main iteration info ----------
+
+    if ( z_id == 0 ) {
+
+      HESYMV(get_loop_info) ( __isCOND_0(),
+                              BLOCK_SIZE, base, BASE, ARG(n), &SHMEM_E(0) );
+      SHMEM_E(5) = BASE_;
+
+      // group_id
+      int const group_id = INT_irem( KEEP_REPRO ? block_id : id, ARG(SG).x );
+#if KEEP_REPRO
+      // group_y
+      int const group_y  = INT_irem( block_y, ARG(SG).y );
+#endif
+
+      // a
+      SHMEM_P(__ID_A__)  = (TYPE *)__cvta_generic_to_global(ARG(a));
+      // x
+      SHMEM_P(__ID_X__)  = (TYPE *)__cvta_generic_to_global(ARG(x));
+      // work0
+      SHMEM_P(__ID_Work0__) = (TYPE*)__cvta_generic_to_global(ARG(work0_)) + LONG_imul(group_id,ARG(ld_work0));
+#if KEEP_REPRO
+      // work1
+      SHMEM_P(__ID_Work1__) = (TYPE *)__cvta_generic_to_global(ARG(work1_)) + LONG_imul(group_y,ARG(ld_work0));
+      // Tickets
+      auto ID_TicketS = (int *)__cvta_generic_to_global(ARG(Tickets_)) + LONG_imul(group_id,ARG(ld_Tickets));
+      SHMEM_P(__ID_TicketS__) = ( ARG(Tickets_) != NULL ? ID_TicketS : NULL );
+      // Ticketf
+      auto ID_TicketF = (int *)__cvta_generic_to_global(ARG(Ticketf_)) + LONG_imul(group_y,ARG(ld_Ticketf));
+      SHMEM_P(__ID_TicketF__) = ( ARG(Ticketf_) != NULL ? ID_TicketF : NULL );
+#else
+      SHMEM_P(__ID_Work1__) = NULL;
+      SHMEM_P(__ID_TicketS__) = NULL;
+      SHMEM_P(__ID_TicketF__) = NULL;
+#endif
+    }
+
+    //---------- {end} main iteration info ----------
+
+
+    //---------- {begin} init S_Regs ----------
+
+    TYPE _____ S_Reg[BASE_over_VX];
+#pragma unroll
+    for ( int I_ = 0; I_ < BASE_over_VX; I_++ ) {
+      S_Reg[I_] = makeCONST < TYPE > ( 0 );
+    }
+
+    //---------- {end} init S_Regs ----------
+
+
+#  define _A_load_(A_REG,a_1,...)	/*-----------------------------------*/ \
+      _MACRO_BLOCK_(                                                    \
+                    TYPE const  * __restrict__ const ak = Ak_Reg_base + (a_1) * (long)ARG(lda); \
+                    if ( C_opt == 0 ) {                                 \
+                      A_REG = Load_Global_CS ( ak );                    \
+                    } else if ( C_opt == 17 ) { /* 9 */                 \
+                      A_REG = Load_Global_CG ( ak );                    \
+                    } else if ( C_opt == 15 ) { /* 8 */                 \
+                      A_REG = Load_Global_CV ( ak );                    \
+                    } else if ( C_opt == 13 ) { /* 7 */                 \
+                      A_REG = Load_Global_LU ( ak );                    \
+                    } else if ( C_opt == 11 ) { /* 6 */                 \
+                      A_REG = ak[0];                                    \
+                    } else if ( (a_1) % max(1, C_opt) == 0 ) {          \
+                      A_REG = ak[0];                                    \
+                    } else {                                            \
+                      A_REG = Load_Global_CS ( ak );                    \
+                    }                                                   \
+                    if ( (a_1) == (BASE_over_VX-1) ) {                  \
+                      Ak_Reg_base += DELTAX(BLOCK_STEP);                \
+                    }                                                   \
+                                                                        )
+#  define _Comp_RX_(A_REG,a_1,...)	/*-----------------------------------*/ \
+      _MACRO_BLOCK_(                                                    \
+                    TYPE const  Z_Reg = SHMEM_Z(d_col+(a_1));           \
+                    if ( (a_1) == 0 ) {                                 \
+                      R_Reg = A_REG * Z_Reg;                            \
+                      X_Reg = Load_Global_LU( x_base );                 \
+                      x_base += (DELTAX(BLOCK_STEP)*ARG(incx));         \
+                    } else {                                            \
+                      R_Reg = fma( A_REG, Z_Reg, R_Reg );               \
+                    }                                                   \
+                    TYPE const  B_Reg = Conj(A_REG);                    \
+                    S_Reg[a_1] = fma( B_Reg, X_Reg, S_Reg[a_1] );       \
+                                                                        )
+
+    int  const N0_ = CHECK_INDEX( 0 );
+    int  const N1_ = CHECK_INDEX( (BASE_over_VX+3)/4*2 );
+    int  const N2_ = CHECK_INDEX( (BASE_over_VX) );
+
+    //---------- {begin} main iteration block ----------
+
+#if GPU_ARCH >= Ampere
+    if constexpr ( sizeof(TYPE) >= 4 && sizeof(TYPE) <= 32 ) {
+      asm volatile ( "cp.async.wait_all;" );
+    }
+#endif
+    __syncthreads ( );
+
+    //
+    // SHMEM_Z[0:BASE] ::
+    // SHMEM_E[0:5] :: for loop control
+    // SHMEM_P[0:5] :: for long-life pointers
+    //
+#pragma unroll 1
+    for ( int itr = ITR_START; itr < 3; itr++ ) {
+      if ( SHMEM_E(4) & (0x1 << itr) ) {
+
+        int  const i_s_0 = SHMEM_E(itr+0) + DELTAX(BLOCK_SIZE) * __BLK_Y__;
+        int  const i_e_0 = SHMEM_E(itr+1);
+
+        int  const d_col = BASE_over_VX * threadIdx_y;
+        int  const col   = base  + d_col;
+
+        int  const d_row = local_id;
+        int  const row   = i_s_0 + d_row;
+
+        //
+        // __restrict__ may not give information to compiler optimization
+        //
+        long const off_a = LONG_imad( ARG(lda), col, row );
+        TYPE const * __restrict__ Ak_Reg_base = (TYPE *)SHMEM_P(__ID_A__) + off_a;
+
+        //
+        long const off_x = LONG_imul( row, ARG(incx) );
+        TYPE const * __restrict__ x_base      = (TYPE *)SHMEM_P(__ID_X__)  + off_x;
+
+        //
+        long const off_w = (long)row;
+        TYPE _____ * __restrict__ const work0 = (TYPE*)SHMEM_P(__ID_Work0__);
+        TYPE _____ * __restrict__ w_base      = (TYPE *)( work0   + off_w );
+
+#if KEEP_REPRO
+        //
+        long const off_T = (long)INT_idiv( i_s_0, BLOCK_SIZE );
+        int ______ * __restrict__ const Tickets = (int *)SHMEM_P(__ID_TicketS__);
+        int ______ * __restrict__ my_TicketS = Tickets + ( Tickets != NULL ? off_T : 0 );
+#endif
+
+        long const BLOCK_STEP  = LONG_imul( BLOCK_SIZE, GY );
+        //
+        __builtin_assume( BLOCK_STEP % 16 == 0 );
+        //
+
+#if 0
+        int  const LOOP_tran = (MM / 10);
+        int  const C_opt  = 0;
+#else
+        int  const LOOP_tran = LOOP_TRAN;
+        int  const C_opt_ = (MM / 10);
+        int  const C_opt  = (C_opt_ <= 0 ? 0 : C_opt_*2-1);
+#endif
+
+        bool const is_delayed = 
+          ( LOOP_tran == 0 ||
+            LOOP_tran == 1 ||
+            LOOP_tran == 2 ) ||
+          ( LOOP_tran == 6 ||
+            LOOP_tran == 7 ||
+            LOOP_tran == 8 ||
+            LOOP_tran == 9 );
+
+        {
+
+        TYPE _____ A_Reg[BASE_over_VX];
+
+        // ------------------------------------------------------ //
+        // ====== ===== ===== ===== ===== ===== ===== ==== ====== //
+#pragma unroll 1
+        for ( int i = i_s_0 - DELTAX(is_delayed ? (int)BLOCK_STEP : 0);
+              __isCOND_LOOP(i);
+              i += DELTAX((int)BLOCK_STEP) ) {
+
+          // ====== ===== ===== ===== ===== ===== ===== ====== //
+
+          TYPE _____ R_Reg = makeCONST<TYPE>(0);
+          bool const mask  = __isCOND_MASK(row);
+
+          if ( mask ) {
+
+            TYPE _____  X_Reg;
+
+            // ====== ===== ===== ===== ===== ===== ===== ====== //
+
+            if ( LOOP_tran == 0 ) {
+              if ( __isALREADY_PASSED( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _Comp_RX_(A_Reg[K_],K_);
+                }
+              }
+              if ( __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _A_load_(A_Reg[K_],K_);
+                }
+              }
+            }
+ 
+            if ( LOOP_tran == 1 ) {
+              if ( __isALREADY_PASSED( i ) && ! __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _Comp_RX_(A_Reg[K_],K_);
+                }
+              }
+              if ( __isALREADY_PASSED( i ) && __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N1_; K_ ++ ) {
+                  if ( K_ < N2_ ) _Comp_RX_(A_Reg[K_],K_);
+                }
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  int L_ = K_-N0_+N1_;
+                  if ( N1_ <= L_ && L_ < N2_ ) _Comp_RX_(A_Reg[L_],L_);
+                  _A_load_(A_Reg[K_],K_);
+                }
+              }
+              if ( !__isALREADY_PASSED( i ) && __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _A_load_(A_Reg[K_],K_);
+                }
+              }
+            }
+
+            if ( LOOP_tran == 2 ) {
+              if ( __isALREADY_PASSED( i ) && ! __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _Comp_RX_(A_Reg[K_],K_);
+                }
+              }
+              if ( __isALREADY_PASSED( i ) && __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _Comp_RX_(A_Reg[K_],K_);
+                  _A_load_(A_Reg[K_],K_);
+                }
+              }
+              if ( !__isALREADY_PASSED( i ) && __isNEXT_ACTIVE( i ) ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _A_load_(A_Reg[K_],K_);
+                }
+              }
+            }
+
+            // ====== ===== ===== ===== ===== ===== ===== ====== //
+
+            if ( LOOP_tran == 3 ) {
+#pragma unroll
+              for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                _A_load_(A_Reg[K_],K_);
+              }
+#pragma unroll
+              for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                _Comp_RX_(A_Reg[K_],K_);
+              }
+            }
+
+            if ( LOOP_tran == 4 ) {
+#pragma unroll
+              for ( int K_ = N0_; K_ < N1_; K_ ++ ) {
+                if ( K_ < N2_ ) _A_load_(A_Reg[K_],K_);
+              }
+#pragma unroll
+              for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                int L_ = K_-N0_+N1_;
+                if ( N1_ <= L_ && L_ < N2_ ) _A_load_(A_Reg[L_],L_);
+                _Comp_RX_(A_Reg[K_],K_);
+              }
+            }
+
+            if ( LOOP_tran == 5 ) {
+#pragma unroll
+              for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                _A_load_(A_Reg[K_],K_);
+                _Comp_RX_(A_Reg[K_],K_);
+              }
+            }
+
+            // ====== ===== ===== ===== ===== ===== ===== ====== //
+
+            if ( LOOP_tran == 6 ||
+                 LOOP_tran == 7 ||
+                 LOOP_tran == 8 ||
+                 LOOP_tran == 9 ) {
+
+              const int branch = (__isALREADY_PASSED( i ) ? 2 : 0) + (__isNEXT_ACTIVE( i ) ? 1 : 0);
+
+              if ( branch == 2 ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _Comp_RX_(A_Reg[K_],K_);
+                }
+              }
+              else if ( branch == 1 ) {
+#pragma unroll
+                for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                  _A_load_(A_Reg[K_],K_);
+                }
+              }
+              else if ( branch == 3 ) {
+                if ( LOOP_tran == 6 ) {
+#pragma unroll
+                  for ( int K_ = 0; K_ < N2_; K_ ++ ) {
+                    TYPE V_Reg = A_Reg[K_];
+                    _A_load_(A_Reg[K_],K_);
+                    _Comp_RX_(V_Reg,K_);
+                  }
+                }
+                if ( LOOP_tran == 7 ) {
+                  TYPE _____ C_Reg[BASE_over_VX];
+#pragma unroll
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    C_Reg[K_] = A_Reg[K_];
+                    _A_load_(A_Reg[K_],K_);
+                  }
+#pragma unroll
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    _Comp_RX_(C_Reg[K_],K_);
+                  }
+                }
+                if ( LOOP_tran == 8 ) {
+                  TYPE _____ C_Reg[BASE_over_VX];
+#pragma unroll
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    C_Reg[K_] = A_Reg[K_];
+                  }
+#pragma unroll
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    _A_load_(A_Reg[K_],K_);
+                    _Comp_RX_(C_Reg[K_],K_);
+                  }
+                }
+                if ( LOOP_tran == 9 ) {
+                  TYPE _____ C_Reg[BASE_over_VX];
+#pragma unroll
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    C_Reg[K_] = A_Reg[K_];
+                  }
+#pragma unroll 
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    _A_load_(A_Reg[K_],K_);
+                  }
+#pragma unroll
+                  for ( int K_ = N0_; K_ < N2_; K_ ++ ) {
+                    _Comp_RX_(C_Reg[K_],K_);
+                  }
+                }
+              }
+
+            }
+
+          }
+
+          // ====== ===== ===== ===== ===== ===== ===== ====== //
+
+          if ( __isALREADY_PASSED( i ) ) {
+
+            if ( VX > 1 ) {
+#if !KEEP_REPRO
+              __syncthreads ( );
+#endif
+              if ( mask && (z_id >= BLOCK_SIZE) ) {
+                SHMEM_W(z_id-BLOCK_SIZE) = R_Reg; // [0:THRESDS-BLOCK_SIZE]
+              }
+              __syncthreads ( );
+              if ( mask && (z_id < BLOCK_SIZE) ) {
+                int _____  w_id = z_id;
+#pragma unroll
+                for ( int K_ = 1; K_ < VX; K_ ++ ) {
+                  R_Reg += SHMEM_W(w_id);
+                  w_id += BLOCK_SIZE;
+                }
+              }
+            }
+
+#if KEEP_REPRO
+            if ( my_TicketS != NULL ) {
+#if !USE_STRICT_TICKET_CHECK
+              if ( isUPPER ? block_id < ARG(GX)-ARG(SG).x : block_id >= ARG(SG).x )
+#endif
+                get_Ticket ( my_TicketS, block_id );
+            }
+#endif
+
+            if ( mask && (z_id < BLOCK_SIZE) ) {
+#if USE_ATOMIC
+#  if KEEP_REPRO
+              if ( my_TicketS != NULL )
+                ATOMIC_RED  ( w_base, R_Reg );
+              else
+#  endif
+              atomicRed  ( w_base, R_Reg );
+#else
+              if ( isUPPER ? block_id < ARG(GX)-ARG(SG).x : block_id >= ARG(SG).x ) {
+#  if USE_STRONG_LDST_ORDER
+                R_Reg += Load_Acquire_Global ( w_base );
+#  else
+                R_Reg += w_base[0];
+#  endif
+              }
+#  if USE_STRONG_LDST_ORDER
+              Store_Release_Global ( w_base, R_Reg );
+#  else
+#    if USE_CONFIRM_LDST
+              Store_Global_with_Confirm ( w_base, R_Reg );
+#    else
+              w_base[0] = R_Reg;
+#    endif
+#  endif
+#endif
+              w_base += ( DELTAX(BLOCK_STEP) );
+            }
+
+#if KEEP_REPRO
+            if ( my_TicketS != NULL ) {
+              int const next_block = block_id - DELTAX(ARG(SG).x);
+              release_Ticket ( my_TicketS, next_block );
+              my_TicketS += ( DELTAX((long)GY) );
+            }
+#endif
+
+          }
+
+          // ====== ===== ===== ===== ===== ===== ===== ====== //
+
+        }
+
+        // ====== ===== ===== ===== ===== ===== ===== ==== ====== //
+        // ------------------------------------------------------ //
+
+        }
+
+      }
+    }
+    // SHMEM_W [0:THREADS] is freed
+    // SHMEM_E [0:4] is freed
+
+    //---------- {end} main iteration block ----------
+
+
+    __syncthreads ( );
+
+
+    //---------- {begin} diagonal block ----------
+    if ( block_y == 0 ) {
+      int const BASE_ = SHMEM_E(5);
+      int const L_ = min( BASE_, INT_idiv( THREADS, BASE_ ) );
+      if ( z_id < L_ * BASE_ ) {
+
+        int  const j  = INT_idiv( z_id, BASE_ ); // [0: L_]
+        int  const k  = z_id - j * BASE_; // [0: BASE_]
+        TYPE const * A_base = (TYPE *)ARG(a) + LONG_imad(ARG(lda), base, base);
+
+        _____ TYPE  R_Reg = makeCONST < TYPE > ( 0 );
+        int i=j;
+#pragma unroll 1
+        while ( i < BASE_ ) {
+          int  const LX   = ((i < k) ? k : BASE_);
+          bool const flap = (i < k) ^ (ASPEN_UPLO==UPPER);
+          int  const col  = flap ? i : k;
+          int  const row  = flap ? k : i;
+          TYPE _____ * A_ptr = (TYPE *)A_base + LONG_imad(ARG(lda), col, row);
+          long const STEP = LONG_imul(L_, (flap ? ARG(lda) : 1));
+
+#pragma unroll 1
+          for( ; i < LX ; i += L_ ) {
+            TYPE _____ A_Reg = Load_Global_LU ( A_ptr );
+            TYPE const Z_Reg = SHMEM_Z(i);
+            if ( !flap ) A_Reg = Conj(A_Reg);
+            R_Reg = fma( A_Reg, Z_Reg, R_Reg );
+            A_ptr += STEP;
+          }
+        }
+        SHMEM_W(z_id) = R_Reg;
+      }
+      __syncthreads ( );
+
+      if ( __isCOND_0() ) {
+        //
+        // if the diagonal is not the top or bottom corner,
+        // the results are accumulated to S_Regs at once
+        //
+        if ( local_id < L_) {
+          int  const d_col = INT_imul(BASE_over_VX, threadIdx_y);
+          int  const col   = INT_imad(BASE, local_id, d_col);
+#pragma unroll
+          for ( int K_ = 0; K_ < BASE_over_VX; K_++ ) {
+            S_Reg[K_] += SHMEM_W(K_+col);
+          }
+        }
+      } else {
+        //
+        // If the diagonal is the top or bottom corner,
+        // the results are added to y directly
+        //
+        if ( z_id < BASE_ ) {
+          TYPE _____ R_Reg = SHMEM_W(z_id); // [0:BASE_]
+#pragma unroll 1
+          for ( int i=1; i<L_; i++ ) {
+            R_Reg += SHMEM_W(z_id+i*BASE_); // [0:BASE_*L_] in [0:THREADS]
+          }
+          SHMEM_W(z_id) = R_Reg;
+        }
+      }
+      __syncthreads ( );
+     
+
+      // SHMEM_Z[0:BASE] is freed
+      // => SHMEM_W[0:THREADS+BASEx+4] is freed
+
+    }
+    //---------- {end} diagonal block ----------
+
+    if ( __isCOND_0() ) {
+
+      //---------- {begin} sumup registers ----------
+
+      int  const offset_w = BASEx + z_id;
+      // WORK   : shmem[BASEx:BASEx+THREADS] w.r.t. {offset_w:}
+
+      int  const d_col    = BASE_over_VX * threadIdx_y;
+      int  const offset_z = (0) + (d_col + local_id);
+      // OUTPUT : shmem[0:BASE] w.r.t. {offset_z:}
+
+#if 0
+#pragma unroll 1
+      for ( int I_ = 0; true; I_++ ) {
+        reduce_in_block < TYPE, BLOCK_SIZE > ( S_Reg[0],
+                                   (int3){ threadIdx_x, offset_w, I_+offset_z } );
+        if ( I_ == BASE_over_VX-1 ) break;
+#pragma unroll
+        for ( int J_ = 1; J_ < BASE_over_VX; J_++ ) {
+          S_Reg[J_-1] = S_Reg[J_];
+        }
+      }
+#else
+#  define sum1(a1,I_, ...)                                              \
+      reduce_in_block < TYPE, BLOCK_SIZE >                              \
+        ( S_Reg[a1],                                                    \
+          (int3){ threadIdx_x, offset_w, I_+offset_z } )
+
+#  define sum2(a1,I_, ...)                                              \
+      reduce2_in_block< TYPE, BLOCK_SIZE >                              \
+        ( S_Reg[a1], S_Reg[a1+1],                                       \
+          (int3){ threadIdx_x, offset_w, I_+offset_z } )
+
+#  define sum3(a1,I_, ...)                                              \
+      reduce3_in_block< TYPE, BLOCK_SIZE >                              \
+        ( S_Reg[a1], S_Reg[a1+1], S_Reg[a1+2],                          \
+          (int3){ threadIdx_x, offset_w, I_+offset_z } )
+
+#  define sum4(a1,I_, ...)                                              \
+      reduce4_in_block< TYPE, BLOCK_SIZE >                              \
+        ( S_Reg[a1], S_Reg[a1+1], S_Reg[a1+2], S_Reg[a1+3],             \
+          (int3){ threadIdx_x, offset_w, I_+offset_z } )
+
+#  define sum8(a1,I_, ...)                                              \
+      reduce8_in_block< TYPE, BLOCK_SIZE >                              \
+        ( S_Reg[a1], S_Reg[a1+1], S_Reg[a1+2], S_Reg[a1+3],             \
+          S_Reg[a1+4], S_Reg[a1+5], S_Reg[a1+6], S_Reg[a1+7],           \
+          (int3){ threadIdx_x, offset_w, I_+offset_z } )
+
+      {
+        int const I__ = (BASE_over_VX >> 3) << 3;
+#pragma unroll 1
+        for ( int I_ = 0; I_ < I__; I_ += 8 ) {
+          sum8(0,I_);
+          if ( I_ + 8 < I__ ) {
+#pragma unroll
+            for ( int J_ = 8; J_ < BASE_over_VX; J_++ ) {
+              S_Reg[J_-8] = S_Reg[J_];
+            }
+          }
+        }
+        int const J__ = BASE_over_VX % 8;
+        int const K__ = min(I__,8);
+        if ( J__ == 1 ) {
+          sum1(K__,I__);
+        } else if ( J__ == 2 ) {
+          sum2(K__,I__);
+        } else if ( J__ == 3 ) {
+          sum3(K__,I__);
+        } else if ( J__ == 4 ) {
+          sum4(K__,I__);
+        } else if ( J__ == 5 ) {
+          sum4(K__,I__); sum1(K__+4,I__+4);
+        } else if ( J__ == 6 ) {
+          sum4(K__,I__); sum2(K__+4,I__+4);
+        } else if ( J__ == 7 ) {
+          sum4(K__,I__); sum3(K__+4,I__+4);
+        }
+      }
+#  undef sum1
+#  undef sum2
+#  undef sum3
+#  undef sum4
+#  undef sum8
+#endif
+
+      //---------- {end} sumup registers ----------
+
+    }
+
+    {
+
+      //---------- {begin} post-processing ----------
+
+      //
+      // Sumup R_Reg's across on GY blocks via shmem.
+      // st. shmem[k] <- R_Reg = A(:,base+k)*x[:], k in (0,BASE)
+      //
+      // for k in (0, BASE) {
+      //   for i in (0, GY) {
+      //     y[(base+k)*incy] += alpha * shmem[i]
+      //    ==> work[base+k] += shmem[i]
+      //    ==> y[] += alpha * work[]
+      //   }
+      // }
+      //
+      {
+#if !KEEP_REPRO
+        TYPE _____ * __restrict__ const work0   = (TYPE *)SHMEM_P(__ID_Work0__);
+#endif
+#if KEEP_REPRO
+        TYPE _____ * __restrict__ const work1   = (TYPE *)SHMEM_P(__ID_Work1__);
+        int  _____ * __restrict__ const Ticketf = (int *)SHMEM_P(__ID_TicketF__);
+        int  _____ * __restrict__ const my_TicketF = Ticketf + (Ticketf != NULL ? block_id : 0);
+
+        if ( my_TicketF != NULL ) {
+#if !USE_STRICT_TICKET_CHECK
+          if ( block_y >= ARG(SG).y )
+#endif
+            get_Ticket ( my_TicketF, block_y );
+        } else
+#endif
+        __syncthreads ( );
+
+        int const BASE_  = SHMEM_E(5);
+        int const BASE_X = __isCOND_0() ? BASE : BASE_;
+        if ( z_id < BASE_X ) {
+          long const pos      = base + z_id;
+          TYPE _____ * __restrict__ const w_base =
+#if KEEP_REPRO
+                                                    work1
+#else
+                                                    work0
+#endif
+                                                          + pos;
+          TYPE _____ R_Reg = SHMEM_W(z_id); // [0:BASE]
+
+#if USE_ATOMIC
+#  if KEEP_REPRO
+          if ( my_TicketF != NULL ) {
+            ATOMIC_RED  ( w_base, R_Reg );
+          } else
+#  endif
+          atomicRed   ( w_base, R_Reg );
+#else
+          if ( block_y >= ARG(SG).y ) {
+#  if USE_STRONG_LDST_ORDER
+            R_Reg += Load_Acquire_Global ( w_base );
+#  else
+            R_Reg += w_base[0];
+#  endif
+          }
+#  if USE_STRONG_LDST_ORDER
+          Store_Release_Global ( w_base, R_Reg );
+#  else
+#    if USE_CONFIRM_LDST
+          Store_Global_with_Confirm ( w_base, R_Reg );
+#    else
+          w_base[0] = R_Reg;
+#    endif
+#  endif
+#endif
+        }
+
+#if KEEP_REPRO
+        if ( my_TicketF != NULL ) {
+          int const next_block = block_y + ARG(SG).y;
+          release_Ticket ( my_TicketF, next_block );
+        }
+#endif
+      }
+
+      //---------- {end} post-processing ----------
+
+    }
+
+  }
+
+  //---------- {end} post-processing2 ----------
+
+#  undef	BASE_over_VX
+
+#  undef	id
+#  undef	block_id
+#  undef	block_y
+#
+#  undef	threadIdx_x
+#  undef	threadIdx_y
+#  undef	local_id
+#  undef	z_id
+
+#  undef	SHMEM_raw
+#  undef	SHMEM_W
+#  undef	SHMEM_Z
+#  undef	SHMEM_E
+#  undef	SHMEM_P
+#  undef	__CAST_PTR__
+
+#  undef	__ID_A__
+#  undef	__ID_X__
+#  undef	__ID_Work0__
+#  undef	__ID_Work1__
+#  undef	__ID_TicketS__
+#  undef	__ID_TicketF__
+
+#  undef	__isNEXT_ACTIVE
+#  undef	__isALREADY_PASSED
+#  undef	CHECK_INDEX
+#  undef	ITR_START
+
+#  undef	_A_load_
+#  undef	_Comp_RX_
+
+#  undef	DIFF_LD
+#  undef	CONJ_AReg
+
+#undef	ARG
+}
+
+//=============================================================================
+//=============================================================================
+
+template < int ARCH, class TYPE, int BLOCK_SIZE, int GY, int VX, int BASE, int MM >
+__host__ void
+API_private(HESYMV(shmem_info)) ( long & shmem_needed, long & shmem_size_per_block, int const BLOCK_MULTIPLICITY )
+{
+  shmem_needed = SHMEM_W_SIZE + 8*sizeof(int) + 6*sizeof(size_t);
+
+  shmem_size_per_block = shmem_needed * BLOCK_MULTIPLICITY;
+  cudaFuncSetAttribute(
+                       API_private(HESYMV(kernel_main_do))
+                       < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >,
+                       cudaFuncAttributeMaxDynamicSharedMemorySize,
+                       shmem_size_per_block );
+
+  int numBlocks = 0;
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor( &numBlocks,
+                                                 API_private(HESYMV(kernel_main_do))
+                                                 < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >,
+                                                 BLOCK_SIZE * VX,
+                                                 shmem_needed );
+
+  if ( Ceiling(shmem_needed, (long)SHMEM_UNIT_SIZE) * numBlocks <= SHMEM_wo_OPTIN_KB*1024 ) {
+
+    shmem_size_per_block = shmem_needed;
+
+  } else {
+
+    int smem_per_sm = 0;
+    int smem_per_block = 0;
+    int smem_per_block_optin = 0;
+
+    cudaDeviceGetAttribute(&smem_per_sm,
+        cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0);
+
+    cudaDeviceGetAttribute(&smem_per_block_optin,
+        cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
+
+    smem_per_block = smem_per_block_optin;
+
+    smem_per_block /= SHMEM_UNIT_SIZE;
+    smem_per_block /= BLOCK_MULTIPLICITY;
+    smem_per_block *= SHMEM_UNIT_SIZE;
+    smem_per_block *= BLOCK_MULTIPLICITY;
+
+    while ( 1 ) {
+
+      cudaFuncSetAttribute(
+                        API_private(HESYMV(kernel_main_do))
+                        < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >,
+                        cudaFuncAttributeMaxDynamicSharedMemorySize,
+                        smem_per_block );
+
+      cudaFuncAttributes attr;
+      cudaFuncGetAttributes( &attr,
+                         API_private(HESYMV(kernel_main_do))
+                         < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM > );
+
+      int const  shmem_capacity  = attr.maxDynamicSharedSizeBytes;
+      int const  num_units       = shmem_capacity / SHMEM_UNIT_SIZE;
+      int const  units_per_block = num_units / BLOCK_MULTIPLICITY;
+
+      shmem_size_per_block = (long)units_per_block * SHMEM_UNIT_SIZE;
+
+      int _____ numBlocks = 0;
+      cudaOccupancyMaxActiveBlocksPerMultiprocessor( &numBlocks,
+                                                   API_private(HESYMV(kernel_main_do))
+                                                   < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >,
+                                                   BLOCK_SIZE * VX,
+                                                   shmem_size_per_block );
+
+      if ( numBlocks >= BLOCK_MULTIPLICITY ) break;
+
+      smem_per_block /= BLOCK_MULTIPLICITY;
+      smem_per_block -= SHMEM_UNIT_SIZE;
+      smem_per_block *= BLOCK_MULTIPLICITY;
+
+      if ( smem_per_block <= 48*1024 ) {
+        smem_per_block = 48*1024;
+        cudaFuncSetAttribute(
+                        API_private(HESYMV(kernel_main_do))
+                        < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >,
+                        cudaFuncAttributeMaxDynamicSharedMemorySize, smem_per_block );
+        int const num_units       = smem_per_block / SHMEM_UNIT_SIZE;
+        int const units_per_block = num_units / BLOCK_MULTIPLICITY;
+        shmem_size_per_block = (long)units_per_block * SHMEM_UNIT_SIZE;
+        break;
+      }
+
+    }
+
+  }
+
+}
+		
+#undef	THREADS
+#undef	__SHMEM_W_SIZE__
+#undef	SHMEM_W_SIZE
+
+template < int ARCH, class TYPE >
+__forceinline__ __host__ void *
+API_private(HESYMV(alloc_work)) ( int const n, void * wk_ptr[], long const wk_len[], cudaStream_t const stream )
+{
+  int  const n_pat    = (1<<n);
+  int  _____ opt_pat  = n_pat;
+  long const WorkSize = API(get_device_WorkSize)();
+  long _____ opt_size = 0;
+  long _____ sum      = 0;
+  int  const N        = abs( n );
+
+  {
+    // first : just confirm the full coverage
+    sum = 0;
+    for( int j=0; j<N; j++ ) {
+      if ( wk_ptr[j] == NULL ) continue;
+      sum += wk_len[j];
+    }
+  }
+
+  if ( n < 0 ) {
+    if ( sum <= WorkSize ) {
+      return NULL;
+    } else {
+      return API(get_device_WorkArea)();
+    }
+  }
+
+  if ( sum <= WorkSize ) {
+    // not needed to calcurate alternative allocation
+    opt_pat  = n_pat - 1;
+    opt_size = sum;
+  } else {
+    for( int i=0; i<n_pat-1; i++ ) {
+      sum = 0;
+      for( int j=0; j<N; j++ ) {
+        if ( wk_ptr[j] == NULL ) continue;
+        if ( i & (1<<j) ) sum += wk_len[j];
+      }
+      if ( sum <= WorkSize ) {
+        if ( sum > opt_size ) {
+          opt_size = sum; opt_pat = i;
+        }
+      }
+    }
+  }
+  long _____ max_size = sum;
+
+
+  if ( opt_pat < n_pat ) {
+
+    // second : allocation
+    long _____ lGmemory  = std::max( max_size - opt_size, (long)0 );
+    void _____ * Gmemory = NULL;
+    if ( lGmemory > 0 ) {
+      cudaError_t ret = cudaMallocAsync( &Gmemory, lGmemory, stream );
+      if ( ret != cudaSuccess ) {
+        API(shutdown)();
+        exit ( 1 );
+        return NULL;
+      }
+    }
+
+    // third : assign to the allocated area
+    void * addr_0 = API(get_device_WorkArea)();
+    void * addr_1 = Gmemory;
+
+    for( int i=0; i<N; i++ ) {
+      if ( wk_ptr[i] == NULL ) { continue; }
+      long _____ * ptr = (long *)wk_ptr[i];
+      if ( wk_len[i] == 0 ) { *ptr = (long)NULL; continue; }
+      if ( opt_pat & (1<<i) ) {
+        // addr_0
+        *ptr = (long)addr_0;
+        addr_0 = (void *)((long)addr_0 + wk_len[i]);
+      } else {
+        // addr_1
+        *ptr = (long)addr_1;
+        addr_1 = (void *)((long)addr_1 + wk_len[i]);
+      }
+    }
+
+    return Gmemory;
+  }
+
+  return NULL;
+}
+
+template < int ARCH, class TYPE >
+__forceinline__ __host__ void
+API_private(HESYMV(free_work)) ( _Writable_ptr_(void) Gmemory, cudaStream_t const stream )
+{
+  cudaFreeAsync ( Gmemory, stream );
+}
+
+template < int ARCH, class TYPE, int BLOCK_SIZE, int GY, int VX, int BASE, int MM >
+__host__ void
+API_private(HESYMV(host_main)) ( int  const n,
+                                 _ReadOnly_ptr_(TYPE) a,
+                                 int  const lda,
+                                 _ReadOnly_ptr_(TYPE) x,
+                                 int  const incx,
+                                 _Writable_ptr_(TYPE) y,
+                                 int  const incy,
+                                 TYPE const alpha,
+                                 TYPE const beta,
+                                 int  const BLOCK_MULTIPLICITY
+                                 )
+{
+  //
+  // y = alpha * A[:::lda,:] * x[::incx] + beta * y[::incy]
+  //
+
+  cudaStream_t const stream  = API(get_Stream)();
+
+  // define the thread and block shape info, but a 1D fashon
+  int  const t1 = BLOCK_SIZE * VX;
+  int  const GX = Ceil(n, BASE);
+
+
+  // check the work-array status
+
+  TYPE * dwork0  = NULL;
+  TYPE * dwork1  = NULL;
+  int * Tickets  = NULL;
+  int * Ticketf  = NULL;
+
+  int  const  nTickets   = KEEP_REPRO ? Ceil( n, BLOCK_SIZE ) : 0;
+  int  const  nTicketf   = KEEP_REPRO ? GX : 0;
+  int  const  ndwork0    = Ceiling( n, BLOCK_SIZE );
+  int  const  ndwork1    = KEEP_REPRO ? Ceiling( n, BLOCK_SIZE ) : 0;
+
+  long const siz         = 512/max(4,(int)sizeof(TYPE));
+  long const ldwork0     = Ceiling( (long)sizeof(TYPE)*ndwork0, siz );
+  long const ldwork1     = Ceiling( (long)sizeof(TYPE)*ndwork1, siz );
+  long const lTickets    = Ceiling( (long)sizeof(int)*nTickets, siz );
+  long const lTicketf    = Ceiling( (long)sizeof(int)*nTicketf, siz );
+
+  int  _____ SGX       = 1;
+  int  _____ SGY       = 1;
+  void _____ * Gmemory = NULL;
+
+  {
+    long const WorkSize = API(get_device_WorkSize)();
+    int  const numbers_MP = API(get_numbers_MP)();
+#if KEEP_REPRO
+    int const SMF = 3;
+#  if USE_ATOMIC
+    SGY = (GY <= 2*SMF) ? (GY+1)/2+(GY==2) : 1;
+    int  SGY_ = ( GY > 2 * SGY ? 1 : 0 );
+#  else
+    SGY = (GY <= SMF ) ? GY : 1;
+    int  SGY_ = ( GY > 1 * SGY ? 1 : 0 );
+#  endif
+    int  const num_entries = 4;
+    long const dw = std::max( WorkSize - ldwork1*SGY - lTicketf*SGY_, (long)1 );
+    long const dr = ldwork0 + lTickets;
+#else
+    SGY = 0;
+    int  SGY_ = 0;
+    int  const num_entries = 1;
+    long const dw = WorkSize;
+    long const dr = ldwork0;
+#endif
+    SGX = (int)std::min( Ceil( dw, dr ), (long)((GX+1)/2) );
+    SGX = (int)std::min( SGX, (int)(numbers_MP+1)/2 );
+    int SGX_ = SGX;
+    while ( SGX > 1 )
+    {
+      void _____ * wk_ptr[10] = {
+        &dwork0,        &Tickets,       &Ticketf,       &dwork1, };
+      long _____   wk_len[10] = {
+        ldwork0*SGX,    lTickets*SGX_,  lTicketf*SGY_,  ldwork1*SGY, };
+      Gmemory = API_private(HESYMV(alloc_work))
+        < ARCH, TYPE > ( -num_entries, wk_ptr, wk_len, stream );
+      if ( Gmemory == NULL ) break;
+      SGX--;
+    }
+    Gmemory = NULL;
+    SGX  = std::max( SGX, 1 );
+#if USE_ATOMIC
+    SGX_ = ( GX > 2 * SGX ? SGX : 0 );
+#else
+    SGX_ = ( GX > 1 * SGX ? SGX : 0 );
+#endif
+
+#if KEEP_REPRO
+#  if USE_ATOMIC
+    if ( GY > 2*SMF )
+#  else
+    if ( GY > SMF )
+#  endif
+    {
+      int SGY_old = SGY;
+      int SGY____ = SGY_;
+#  if USE_ATOMIC
+      SGY = (GY+1)/2;
+#  else
+      SGY = GY;
+#  endif
+      SGY_ = 0;
+      void _____ * wk_ptr[10] = {
+        &dwork0,        &Tickets,       &Ticketf,       &dwork1, };
+      long _____   wk_len[10] = {
+        ldwork0*SGX,    lTickets*SGX_,  lTicketf*SGY_,  ldwork1*SGY, };
+      Gmemory = API_private(HESYMV(alloc_work))
+        < ARCH, TYPE > ( -num_entries, wk_ptr, wk_len, stream );
+      if ( Gmemory != NULL ) { SGY = SGY_old; SGY_ = SGY____; }
+    }
+
+    if ( Gmemory != NULL )
+    {
+      int SGY_old = SGY;
+      int SGY____ = SGY_;
+    while ( SGY < GY ) {
+      SGY++;
+      SGY_ = SGY;
+      void _____ * wk_ptr[10] = {
+        &dwork0,        &Tickets,       &Ticketf,       &dwork1, };
+      long _____   wk_len[10] = {
+        ldwork0*SGX,    lTickets*SGX_,  lTicketf*SGY_,  ldwork1*SGY, };
+      Gmemory = API_private(HESYMV(alloc_work))
+        < ARCH, TYPE > ( -num_entries, wk_ptr, wk_len, stream );
+      if ( Gmemory != NULL ) { SGY--; SGY_--; break; }
+    }
+      if ( SGY == SGY_old ) { SGY_ = SGY____; }
+    }
+#endif
+
+#if USE_ATOMIC
+    if ( SGX >= (GX+1)/2 ) { SGX = (GX+1)/2; SGX_ = 0; }
+    if ( SGY >= (GY+1)/2 ) { SGY = (GY+1)/2; SGY_ = 0; }
+#else
+    if ( SGX >= GX ) { SGX = GX; SGX_ = 0; }
+    if ( SGY >= GY ) { SGY = GY; SGY_ = 0; }
+#endif
+
+    {
+      void _____ * wk_ptr[10] = {
+        &dwork0,        &Tickets,       &Ticketf,       &dwork1, };
+      long _____   wk_len[10] = {
+        ldwork0*SGX,    lTickets*SGX_,  lTicketf*SGY_,  ldwork1*SGY, };
+      Gmemory = API_private(HESYMV(alloc_work))
+        < ARCH, TYPE > ( num_entries, wk_ptr, wk_len, stream );
+    }
+
+#if KEEP_REPRO
+    if ( SGX_ == 0 ) Tickets = NULL;
+    if ( SGY_ == 0 ) Ticketf = NULL;
+#endif
+  }
+
+  int  const ld_dwork0   = ldwork0 / sizeof(TYPE);
+#if KEEP_REPRO
+  int  const ld_Tickets  = lTickets / sizeof(int);
+  int  const ld_Ticketf  = lTicketf / sizeof(int);
+#endif
+
+
+  static long  shmem_size_per_block =  0;
+  static long  shmem_needed         =  0;
+  static int   runFirsttime = 1;
+
+  if ( runFirsttime ) {
+    API_private(HESYMV(shmem_info))
+      < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >
+      ( shmem_needed, shmem_size_per_block, BLOCK_MULTIPLICITY );
+    shmem_needed = std::max( shmem_needed, shmem_size_per_block );
+    runFirsttime = 0;
+  }
+
+  {
+    dim3 const threads_P ( t1, 1 );
+    dim3 const grid_P ( GX, 1 );
+    long const shmem_size = sizeof(int) * SGX;
+
+    ASPEN_KERNEL_INVOKE(
+                        API_private(HESYMV(kernel_PRE_DO)),
+                        < ARCH, TYPE >
+                        <<< grid_P, threads_P, shmem_size, stream
+                        >>> (
+#if USE_STRUCT_PRE_DO
+                             PRE_DO_Args<TYPE> {
+#endif
+                             SGX,
+                             SGY,
+#if KEEP_REPRO
+                             Tickets,
+                             ld_Tickets,
+                             Ticketf,
+                             ld_Ticketf,
+#endif
+                             dwork0,
+                             ld_dwork0,
+#if KEEP_REPRO
+                             dwork1,
+#endif
+                             n,
+                             nTickets
+#if USE_STRUCT_PRE_DO
+                             }
+#endif
+                             )
+#undef	USE_STRUCT_PRE_DO
+                        );
+  }
+  {
+    dim3 const threads_P ( t1, 1 );
+    dim3 const grid_P ( GX*GY, 1 );
+    long const shmem_size = shmem_needed;
+
+    ASPEN_KERNEL_INVOKE(
+                        API_private(HESYMV(kernel_main_do)),
+                        < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >
+                        <<< grid_P, threads_P, shmem_size, stream
+                        >>> (
+#if USE_STRUCT_MAIN_DO
+                             MAIN_DO_Args<TYPE> {
+#endif
+                             int2{ SGX, SGY },
+                             a,
+                             x,
+                             lda,
+                             n,
+                             incx,
+                             dwork0,
+                             ld_dwork0,
+#if KEEP_REPRO
+                             dwork1,
+#endif
+#if KEEP_REPRO
+                             Tickets,
+                             ld_Tickets,
+                             Ticketf,
+                             ld_Ticketf,
+#endif
+                             GX
+#if USE_STRUCT_MAIN_DO
+                             }
+#endif
+                             )
+#undef	USE_STRUCT_MAIN_DO
+                        );
+  }
+  {
+    dim3 const threads_P ( t1, 1 );
+    dim3 const grid_P ( GX, 1 );
+    long const shmem_size = 0;
+
+    ASPEN_KERNEL_INVOKE(
+                        API_private(HESYMV(kernel_POST_DO)),
+                        < ARCH, TYPE >
+                        <<< grid_P, threads_P, shmem_size, stream
+                        >>> (
+#if USE_STRUCT_POST_DO
+                             POST_DO_Args<TYPE> {
+#endif
+                             SGX,
+                             SGY,
+                             alpha,
+                             beta,
+                             dwork0,
+                             ld_dwork0,
+#if KEEP_REPRO
+                             dwork1,
+#endif
+                             y,
+                             n,
+                             incy
+#if USE_STRUCT_POST_DO
+                             }
+#endif
+                             )
+                        );
+#undef	USE_STRUCT_POST_DO
+  }
+
+  if ( Gmemory != NULL ) {
+    API_private(HESYMV(free_work)) < ARCH, TYPE > ( Gmemory, stream );
+  }
+
+}
+
+//=============================================================================
+
+template < int ARCH, class TYPE, int BLOCK_SIZE, int GY, int VX, int BASE, int MM >
+__host__ void
+API_private(HESYMV(host_stat)) ( int const BLOCK_MULTIPLICITY )
+{
+  char const * RED_type_name[] = {
+    "strong-ld-st",
+    "atomic-repro",
+    "atomic-norepro" };
+  char const * YES_no[] = { "no", "YES" };
+
+  printf( "\n" );
+  printf( "%%\tW_RED_TYPE=\t%d [%s]\n", W_RED_TYPE, RED_type_name[W_RED_TYPE] );
+  printf( "%%\tKEEP_REPRO=\t%s\n", YES_no[KEEP_REPRO] );
+  printf( "%%\tUSE_ATOMIC=\t%s\n", YES_no[USE_ATOMIC] );
+
+  printf( "\n" );
+  printf( "%%\tUSE_STRICT_TICKET_CHECK=\t%s\n",  YES_no[USE_STRICT_TICKET_CHECK  ] );
+  printf( "%%\tUSE_STRONG_CONTROL_ORDER=\t%s\n", YES_no[USE_STRONG_CONTROL_ORDER ] );
+  printf( "%%\tUSE_STRONG_TICKET_ORDER=\t%s\n",  YES_no[USE_STRONG_TICKET_ORDER  ] );
+  printf( "%%\tUSE_STRONG_ATOM_ORDER=\t\t%s\n",  YES_no[USE_STRONG_ATOM_ORDER    ] );
+  printf( "%%\tUSE_STRONG_LDST_ORDER=\t\t%s\n",  YES_no[USE_STRONG_LDST_ORDER    ] );
+  printf( "%%\tUSE_CONFIRM_LDST=\t\t%s\n",       YES_no[USE_CONFIRM_LDST         ] );
+  printf( "%%\tUSE_WEAKER_ATOMIC=\t\t%s\n",      YES_no[USE_WEAKER_ATOMIC        ] );
+
+  printf( "\n" );
+  printf( "#define BLOCK_SIZE    %d\n", BLOCK_SIZE );
+  printf( "#define GY            %d\n", GY );
+  printf( "#define VX            %d\n", VX );
+  printf( "#define UX            %d\n", BASE );
+  printf( "#define MULTIPLICITY  %d\n", BLOCK_MULTIPLICITY );
+  printf( "#define _M_           %d\n", MM );
+  printf( "#define LOOP_TRAN     %d\n", LOOP_TRAN );
+  printf( "\n" );
+
+  {
+    long shmem_size_per_block = 0;
+    long shmem_needed         = 0;
+    API_private(HESYMV(shmem_info))
+      < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >
+      ( shmem_needed, shmem_size_per_block, BLOCK_MULTIPLICITY );
+
+    cudaFuncAttributes attr;
+    ASPEN_KERNEL_INVOKE( cudaFuncGetAttributes,
+                         ( &attr,
+                           API_private(HESYMV(kernel_main_do))
+                           < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM > ) );
+
+    int const TB_by_Warp = MAX_WARP_PER_MP / Ceil(BLOCK_SIZE*VX, 32);
+    int const TB_by_Regs = ((MAX_REGS_PER_BLOCK / Ceiling( attr.numRegs*32, REGIS_UNIT_SIZE ))/WARP_ALLOC_UNIT)*WARP_ALLOC_UNIT / Ceil(BLOCK_SIZE*VX,32);
+    int const TB_by_Smem = attr.maxDynamicSharedSizeBytes / shmem_needed;
+
+    int const TB_ALL = std::min(TB_by_Warp,std::min(TB_by_Regs,TB_by_Smem));
+
+    printf( "#-> %6d warps per threadBlock / %d -> [%d]\n",
+            Ceil(BLOCK_SIZE*VX, 32),
+            MAX_WARP_PER_MP,
+            TB_by_Warp );
+    printf( "#-> %6d registers per thread / %d / %d -> [%d]\n",
+            attr.numRegs,
+            Ceiling( attr.numRegs*32, REGIS_UNIT_SIZE )*Ceil(BLOCK_SIZE*VX,32),
+            MAX_REGS_PER_BLOCK,
+            TB_by_Regs );
+    printf( "#-> %6d bytes per threadBlock (needed) / %5d -> [%d]\n",
+            (int)shmem_needed,
+            attr.maxDynamicSharedSizeBytes,
+            TB_by_Smem );
+
+    int const TB_by_Smem_ = TB_by_Smem * ( (TB_by_Smem < TB_by_Warp) && (TB_by_Smem < TB_by_Regs) ? 2 : 1 );
+
+    printf( "#-> %6d bytes per threadBlock (opt-in) / %5d -> [%d]\n",
+            (int)shmem_size_per_block,
+            attr.maxDynamicSharedSizeBytes,
+            TB_by_Smem_ );
+
+    int numBlocks = 0;
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor( &numBlocks,
+                                                   API_private(HESYMV(kernel_main_do))
+                                                   < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >,
+                                                   BLOCK_SIZE * VX,
+                                                   shmem_size_per_block );
+
+    printf( "#-> %6d maximum threadBlocks per SM %s\n", numBlocks,
+            (numBlocks == BLOCK_MULTIPLICITY ? "" : "(*adjusted)" ) );
+
+    long const activ = (BLOCK_SIZE*VX/32)*numBlocks;
+    double const occup = 100.0*activ/MAX_WARP_PER_MP;
+
+    printf( "#-> %6.2lf maximum occupancy [percent] : %d / %d\n",
+            occup,
+            (BLOCK_SIZE*VX/32)*numBlocks,
+            MAX_WARP_PER_MP );
+  }
+
+  printf( "\n" );
+  return;
+}
+
+#undef	_GY_
+#undef	W_RED_TYPE
+
+#undef	KEEP_REPRO
+#undef	USE_ATOMIC
+#undef	LOOP_TRAN
+
+#undef	USE_STRICT_TICKET_CHECK	
+#undef	USE_STRONG_CONTROL_ORDER
+#undef	USE_STRONG_TICKET_ORDER	
+#undef	USE_STRONG_ATOM_ORDER
+#undef	USE_STRONG_LDST_ORDER
+#undef	USE_CONFIRM_LDST
+#undef	USE_WEAKER_ATOMIC
+
+//=============================================================================
+
+template < int ARCH, class TYPE, int BLOCK_SIZE, int GY, int VX, int BASE, int BLOCK_MULTIPLICITY, int MM >
+__host__ int
+API_private(HESYMV(ATOMIC__host)) ( int  const n,
+                                    _ReadOnly_ptr_(TYPE) a,
+                                    int const lda,
+                                    _ReadOnly_ptr_(TYPE) x,
+                                    int const incx,
+                                    _Writable_ptr_(TYPE) y,
+                                    int const incy,
+                                    TYPE const alpha,
+                                    TYPE const beta
+                                    )
+{
+  if ( n == 0 ) {
+    API_private(HESYMV(host_stat))
+      < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >
+      ( BLOCK_MULTIPLICITY );
+    return 1;
+  }
+
+  API_private(HESYMV(host_main))
+    < ARCH, TYPE, BLOCK_SIZE, GY, VX, BASE, MM >
+    ( n, a, lda, x, incx, y, incy, alpha, beta, BLOCK_MULTIPLICITY );
+
+  return 1;
+}
+
+//=============================================================================
+

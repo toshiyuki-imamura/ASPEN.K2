@@ -1,0 +1,8 @@
+{
+  global:
+    *ASPEN_*;
+    *aspen_*;
+  local:
+    *;
+};
+

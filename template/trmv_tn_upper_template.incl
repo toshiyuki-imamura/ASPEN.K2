@@ -1,0 +1,327 @@
+#pragma once
+
+#include "reduce_in_block.h"
+
+
+//=============================================================================
+
+#if __isINT32__ || __isINT64__
+
+template < class TYPE >
+__global__ void
+API_private(TRMV_Upper_SYMV_init) (
+                                  int const n,
+                                  TYPE const  beta,
+                                  _Writable_ptr_(TYPE) y,
+                                  int const incy
+                                  )
+{
+  int const row = threadIdx.x + blockIdx.x * blockDim.x;
+  if ( row < n ) {
+    TYPE * const yy = y + row * incy;
+    TYPE Y_Reg = makeCONST<TYPE>(0);
+    if ( beta != Y_Reg ) { Y_Reg = beta * yy[0]; }
+    yy[0] = Y_Reg;
+  }
+}
+
+#endif
+
+//=============================================================================
+
+template < class TYPE, int BLOCK_X, int BLOCK_Y, bool USE_atomicRed=false >
+__device__ __forceinline__ void
+API_private(TRMV_UpperN_SYMV_sub) (
+                                   int const n,
+                                   TYPE const  alpha,
+                                   TYPE const  beta,
+                                   _ReadOnly_ptr_(TYPE) a,
+                                   int const lda,
+                                   _ReadOnly_ptr_(TYPE) x,
+                                   int const incx,
+                                   _Writable_ptr_(TYPE) y,
+                                   int const incy,
+                                   int const id
+                                   )
+{
+  int const zid = threadIdx.x;
+  int const yid = INT_idiv(zid, BLOCK_X);
+  int const xid = zid - yid * BLOCK_X;
+
+  int const row0 = BLOCK_X * id;
+  int const row  = row0 + xid;
+  bool const mask = ( row < n && yid == 0 );
+
+  TYPE S_Reg = makeCONST<TYPE>(0);
+
+  if ( row < n ) {
+
+    long const a_step = (long)lda*(long)BLOCK_Y;
+    long const x_step = (long)incx*(long)BLOCK_Y;
+
+    int const i0 = n-BLOCK_Y+yid;
+    TYPE * ak = (TYPE *)a + (long)row + (long)(i0)*(long)lda;
+    TYPE * xk = (TYPE *)x +             (long)(i0)*(long)incx;
+
+    int constexpr LOOP_UNROLL = 16;
+
+    int i = i0;
+    if ( LOOP_UNROLL > 1 ) {
+#pragma unroll 1
+      for ( ; i-(LOOP_UNROLL-1)*BLOCK_Y>=row; i-=LOOP_UNROLL*BLOCK_Y ) {
+        TYPE A_Reg[LOOP_UNROLL], x_Reg[LOOP_UNROLL];
+        for( int I=0; I<LOOP_UNROLL; I++ ) { A_Reg[I] = ak[0]; ak -= a_step; }
+        for( int I=0; I<LOOP_UNROLL; I++ ) { x_Reg[I] = xk[0]; xk -= x_step; }
+        for( int I=0; I<LOOP_UNROLL; I++ ) { S_Reg = fma( A_Reg[I], x_Reg[I], S_Reg ); }
+      }
+    }
+#pragma unroll 1
+    for ( ; i>=row; i-=BLOCK_Y ) {
+      TYPE const A_Reg = ak[0]; ak -= a_step;
+      TYPE const x_Reg = xk[0]; xk -= x_step;
+      S_Reg = fma( A_Reg, x_Reg, S_Reg );
+    }
+
+  }
+
+  if ( BLOCK_Y > 1 ) {
+    __syncthreads();
+    if ( BLOCK_Y > 2 ) {
+      int i=BLOCK_Y;
+#pragma unroll 1
+      while ( i > 1 ) { // BLOCK_X * ceil(log(BLOCK_Y))
+        int const k = i>>1;
+        if ( (i-k) <= yid && yid < i ) {
+          ((TYPE*)__shmem)[zid-(i-k)*BLOCK_X] = S_Reg;
+        }
+        i = (i-k);
+        __syncthreads();
+        if ( yid < k ) {
+          S_Reg += ((TYPE*)__shmem)[zid];
+        }
+        __syncthreads();
+      }
+    } else {
+      if ( yid > 0 ) {
+        ((TYPE*)__shmem)[zid-BLOCK_X] = S_Reg;
+      }
+      __syncthreads();
+      if ( yid == 0 ) { // BLOCK_X*(BLOCK_Y-1)
+#pragma unroll
+        for ( int i=1; i<BLOCK_Y; i++ ) {
+          S_Reg += ((TYPE*)__shmem)[zid+(i-1)*BLOCK_X];
+        }
+      }
+    }
+  }
+
+  if ( mask ) {
+    TYPE * const yy = y + row * incy;
+    if ( USE_atomicRed ) {
+      atomicRed( yy, alpha * S_Reg );
+    } else {
+      TYPE Y_Reg = makeCONST<TYPE>(0);
+      if ( beta != Y_Reg ) { Y_Reg = beta * yy[0]; }
+      yy[0] = fma( alpha, S_Reg, Y_Reg );
+    }
+  }
+}
+
+template < class TYPE, int BLOCK_X, int BLOCK_Y >
+__global__ void
+API_private(TRMV_UpperN_for_SYMV) (
+                                   int const n,
+                                   TYPE const  alpha,
+                                   TYPE const  beta,
+                                   _ReadOnly_ptr_(TYPE) a,
+                                   int const lda,
+                                   _ReadOnly_ptr_(TYPE) x,
+                                   int const incx,
+                                   _Writable_ptr_(TYPE) y,
+                                   int const incy
+                                   )
+{
+  API_private(TRMV_UpperN_SYMV_sub)
+    < TYPE, BLOCK_X, BLOCK_Y, false >
+    ( n, alpha, beta, a, lda, x, incx, y, incy, blockIdx.x );
+}
+
+//=============================================================================
+
+template < class TYPE, int BLOCK_X, int BLOCK_Y, bool USE_atomicRed = false >
+__device__ __forceinline__ void
+API_private(TRMV_UpperT_SYMV_sub) (
+                                   int const  n,
+                                   TYPE const alpha,
+                                   TYPE const beta,
+                                   _ReadOnly_ptr_(TYPE) a,
+                                   int const  lda,
+                                   _ReadOnly_ptr_(TYPE) x,
+                                   int const  incx,
+                                   _Writable_ptr_(TYPE) y,
+                                   int const  incy,
+                                   int const  id
+                                   )
+{
+  int const zid = threadIdx.x;
+  int const yid = INT_idiv(zid, BLOCK_X);
+  int const xid = zid - yid * BLOCK_X;
+
+  int const row0 = BLOCK_Y * id;
+  int const row  = row0 + yid;
+  bool const mask = ( row < n && xid == 0 );
+
+  TYPE S_Reg = makeCONST<TYPE>(0);
+
+  if ( row < n ) {
+
+    long const x_step = BLOCK_X*(long)incx;
+    long const a_step = BLOCK_X;
+
+    int const i0 = xid;
+    TYPE * ak = (TYPE *)a + (long)i0 + (long)lda*(long)row;
+    TYPE * xk = (TYPE *)x + (long)i0*(long)incx;
+
+    int constexpr LOOP_UNROLL = 16;
+
+    int i = i0;
+    if ( LOOP_UNROLL > 1 ) {
+#pragma unroll 1
+      for ( ; i+(LOOP_UNROLL-1)*BLOCK_X<row; i+=LOOP_UNROLL*BLOCK_X ) {
+        TYPE A_Reg[LOOP_UNROLL], x_Reg[LOOP_UNROLL];
+        for( int I=0; I<LOOP_UNROLL; I++ ) { A_Reg[I] = ak[0]; ak += a_step; }
+        for( int I=0; I<LOOP_UNROLL; I++ ) { x_Reg[I] = xk[0]; xk += x_step; }
+        for( int I=0; I<LOOP_UNROLL; I++ ) { S_Reg = fma( Conj(A_Reg[I]), x_Reg[I], S_Reg ); }
+      }
+    }
+#pragma unroll 1
+    for ( ; i<row; i+=BLOCK_X ) {
+      TYPE const A_Reg = ak[0]; ak += a_step;
+      TYPE const x_Reg = xk[0]; xk += x_step;
+      S_Reg = fma( Conj(A_Reg), x_Reg, S_Reg );
+    }
+
+  }
+
+  if ( BLOCK_X > 1 ) {
+    S_Reg = reduce_in_block < TYPE, BLOCK_X >
+      ( S_Reg, (int3){ xid, zid, -1 } );
+  }
+
+  if ( mask ) {
+    TYPE * const yy = y + row * incy;
+    if ( USE_atomicRed ) {
+      atomicRed( yy, alpha * S_Reg );
+    } else {
+      TYPE Y_Reg = yy[0];
+      yy[0] = fma( alpha, S_Reg, Y_Reg );
+    }
+  }
+}
+
+template < class TYPE, int BLOCK_X, int BLOCK_Y >
+__global__ void
+API_private(TRMV_UpperT_for_SYMV) (
+                                   int const  n,
+                                   TYPE const alpha,
+                                   TYPE const beta,
+                                   _ReadOnly_ptr_(TYPE) a,
+                                   int const  lda,
+                                   _ReadOnly_ptr_(TYPE) x,
+                                   int const  incx,
+                                   _Writable_ptr_(TYPE) y,
+                                   int const  incy
+                                   )
+{
+  API_private(TRMV_UpperT_SYMV_sub)
+    < TYPE, BLOCK_X, BLOCK_Y, false >
+    ( n, alpha, beta, a, lda, x, incx, y, incy, blockIdx.x );
+}
+
+//=============================================================================
+
+template < class TYPE, int BLOCK_NX, int BLOCK_NY, int BLOCK_TX, int BLOCK_TY >
+__global__ void
+API_private(TRMV_Upper_SYMV) (
+                                   int const  n,
+                                   TYPE const alpha,
+                                   TYPE const beta,
+                                   _ReadOnly_ptr_(TYPE) a,
+                                   int const  lda,
+                                   _ReadOnly_ptr_(TYPE) x,
+                                   int const  incx,
+                                   _Writable_ptr_(TYPE) y,
+                                   int const  incy
+                                   )
+{
+  int const block_size = gridDim.x/2;
+  if ( blockIdx.x < block_size ) {
+    API_private(TRMV_UpperN_SYMV_sub)
+      < TYPE, BLOCK_NX, BLOCK_NY, true >
+      ( n, alpha, beta, a, lda, x, incx, y, incy, blockIdx.x );
+  } else {
+    API_private(TRMV_UpperT_SYMV_sub)
+      < TYPE, BLOCK_TX, BLOCK_TY, true >
+      ( n, alpha, beta, a, lda, x, incx, y, incy, blockIdx.x-block_size );
+  }
+}
+
+//=============================================================================
+
+template < class TYPE, int BLOCK_NX, int BLOCK_NY, int BLOCK_TX, int BLOCK_TY >
+__host__ void
+API(TRMV_tn_upper_host) (
+                         int const n,
+                         TYPE const alpha,
+                         TYPE const beta,
+                         _ReadOnly_ptr_(TYPE) a,
+                         int const lda,
+                         _ReadOnly_ptr_(TYPE) x,
+                         int const incx,
+                         _Writable_ptr_(TYPE) y,
+                         int const incy
+                         )
+{
+  if ( n <= 0 ) return;
+
+  cudaStream_t const stream  = API(get_Stream)();
+
+  int const t1 = BLOCK_TX * BLOCK_TY;
+  long _____  shmem_size = std::max( t1, BLOCK_NX*std::max((BLOCK_NY+1)/2,3-1) ) *sizeof(TYPE);
+  int const GX = (n-1)/BLOCK_NX+1;
+  int const GY = (n-1)/BLOCK_TY+1;
+  int _____ g1 = std::max( GX, GY );
+
+#if __isINT32__ || __isINT64__
+
+  int _____ g0 = (n-1)/t1+1;
+  int _____ g2 = 2*g1;
+
+  API_private(TRMV_Upper_SYMV_init)
+      < TYPE >
+      <<< g0, t1, shmem_size, stream >>>
+      ( n, beta, y, incy );
+
+  API_private(TRMV_Upper_SYMV)
+      < TYPE, BLOCK_NX, BLOCK_NY, BLOCK_TX, BLOCK_TY >
+      <<< g2, t1, shmem_size, stream >>>
+      ( n, alpha, beta, a, lda, x, incx, y, incy );
+
+#else
+
+  API_private(TRMV_UpperN_for_SYMV)
+      < TYPE, BLOCK_NX, BLOCK_NY >
+      <<< g1, t1, shmem_size, stream >>>
+      ( n, alpha, beta, a, lda, x, incx, y, incy );
+
+  API_private(TRMV_UpperT_for_SYMV)
+      < TYPE, BLOCK_TX, BLOCK_TY >
+      <<< g1, t1, shmem_size, stream >>>
+      ( n, alpha, beta, a, lda, x, incx, y, incy );
+
+#endif
+}
+
+//=============================================================================
+
+

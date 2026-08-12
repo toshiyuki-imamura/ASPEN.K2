@@ -1,0 +1,222 @@
+#!/bin/sh
+
+echo_Message()
+{
+	echo '<--/****************************************'
+	echo 'Automatic Performance Tuning for @P.@KERNEL.-@LU.'
+	date
+	echo -n 'Host on '; echo `hostname`
+	echo 'Device is '$DEVICE
+	if [ x${1} = xbegin ]; then
+		echo 'Start.'
+	fi
+	if [ x${1} = xend ]; then
+		echo 'Successfully completed.'
+	fi
+	if [ x${1} = xterminate ]; then
+		echo 'Terminated unfortunately.'
+	fi
+	echo '****************************************/-->'
+}
+
+
+export LANG=C
+LOG=log-@p.@kernel.@lu.-AT1X.`date +%Y.%m.%d.%T`
+WORK_DIR=@p.@kernel.@lu.-current
+
+if [ x${CUDA_PATH} != x ]; then
+        export LD_LIBRARY_PATH=$CUDA_PATH/lib64:$LD_LIBRARY_PATH
+fi
+export LD_LIBRARY_PATH=`pwd`/../lib:$LD_LIBRARY_PATH
+
+#########################################################################
+#export CUDA_FORCE_PTX_JIT=0
+#export CUDA_CACHE_DISABLE=1
+#########################################################################
+
+cd ../src; make get_dev_info; cd ../tuning
+../src/get_dev_info $ASPEN_GPU_ID > DEV_INFO
+
+DEVICE=`awk '/DEVICE=/{ print $2 }' DEV_INFO`
+MP=`awk '/MP=/{ print $2 }' DEV_INFO`
+CG=`awk '/CG=/{ print $2 }' DEV_INFO`
+MAXDIM=`awk '/MAXDIM@D.=/{ print $2 }' DEV_INFO`
+
+
+cd ../src; make get_mult get_mult32 get_mult48; cd ../tuning
+
+echo_Message begin
+
+$PYTHON ./touch_header.py
+
+mkdir $LOG
+if [ -f $WORK_DIR ]; then
+	\rm -rf $WORK_DIR
+fi
+if [ -h $WORK_DIR ]; then
+	\rm $WORK_DIR
+fi
+if [ -d $WORK_DIR ]; then
+	\rm -rf $WORK_DIR
+fi
+ln -s $LOG $WORK_DIR
+
+echo 'Tuning processes are recorded on '$LOG'.'
+
+cd $WORK_DIR
+cd ../../src; make get_dev_info; cd ../tuning/$WORK_DIR
+ln -s ../../src/get_dev_info .
+
+tar -C ../.. -cf - src template | tar -xf -
+cd src; make clean; cd ..
+
+touch done_pattern
+\rm done_pattern
+
+if [ '@p.' != 'h' ] || [ $CG -eq 530 ] || [ $CG -eq 600 ] || [ $CG -eq 610 ] || [ $CG -eq 630 ] || [ $CG -eq 700 ] || [ $CG -eq 750 ] || [ $CG -eq 800 ] || [ $CG -eq 860 ] ; then
+	H_OK=1
+else
+	H_OK=0
+fi
+
+if [ $H_OK -eq 1 ]; then
+
+touch $LOG.0
+
+export USE_PARAMS_VIA_ARG=1
+export ASPEN_TUNING_LEVEL=
+
+for i in 0 1; do
+/bin/sh ../@p.@kernel.@lu._a.sh $i | tee -a $LOG.0
+done
+
+/bin/sh ../@p.@kernel.@lu._b0.sh  $LOG 0 1 top20-0step
+echo "Complete phase b0"
+
+/bin/sh ../@p.@kernel.@lu._b1.sh  $LOG 1 2 top20-1step
+echo "Complete phase b1"
+
+/bin/sh ../@p.@kernel.@lu._b2.sh  $LOG 2 3 top20-3step
+echo "Complete phase b2"
+
+export USE_PARAMS_VIA_ARG=0
+
+echo '#if defined(PRESERVE_DROP)'	 > param-@p.@kernel.@lu..h
+echo '#undef	PRESERVE_DROP'		>> param-@p.@kernel.@lu..h
+echo '#endif'				>> param-@p.@kernel.@lu..h
+echo '#define	PRESERVE_DROP	1'	>> param-@p.@kernel.@lu..h
+cp param-@p.@kernel.@lu..h ..
+
+/bin/sh ../@p.@kernel.@lu._b3.sh  $LOG 3 4 top20-4step
+echo "Complete phase b3"
+
+/bin/sh ../@p.@kernel.@lu._b4.sh  $LOG 4 5 top20-final
+echo "Complete phase b4"
+
+$PYTHON ../symv_predict.py predict.data @p.@kernel.-@luop.-auto3.h
+echo "Complete phase c"
+
+$PYTHON ../d_filter.py @p.@kernel.-@luop.-auto3.h @p.@kernel.-@luop.-auto2.h
+echo "Complete phase d"
+
+unset USE_PARAMS_VIA_ARG
+
+fi
+
+
+echo @p.@kernel._@luop. | awk '{print "#ifndef "toupper($0)"_AUTO_H_INCLUDED" }' \
+			>  @p.@kernel.-@luop.-auto_.h
+echo @p.@kernel._@luop. | awk '{print "#define "toupper($0)"_AUTO_H_INCLUDED 1" }' \
+			>> @p.@kernel.-@luop.-auto_.h
+echo '#if 0'            >> @p.@kernel.-@luop.-auto_.h
+echo_Message            >> @p.@kernel.-@luop.-auto_.h
+cat ../DEV_INFO         >> @p.@kernel.-@luop.-auto_.h
+echo '<--'              >> @p.@kernel.-@luop.-auto_.h
+cat ../CURRENT_GPU      >> @p.@kernel.-@luop.-auto_.h
+echo '-->'              >> @p.@kernel.-@luop.-auto_.h
+echo '#endif'           >> @p.@kernel.-@luop.-auto_.h
+if [ $H_OK -eq 1 ]; then
+cat @p.@kernel.-@luop.-auto.h	>> @p.@kernel.-@luop.-auto_.h
+fi
+echo '#endif'           >> @p.@kernel.-@luop.-auto_.h
+
+mv @p.@kernel.-@luop.-auto_.h @p.@kernel.-@luop.-auto.h
+cp @p.@kernel.-@luop.-auto.h ..
+
+
+echo @p.@kernel._@luop. | awk '{print "#ifndef "toupper($0)"_AUTO2_H_INCLUDED" }' \
+			>  @p.@kernel.-@luop.-auto_.h
+echo @p.@kernel._@luop. | awk '{print "#define "toupper($0)"_AUTO2_H_INCLUDED 1" }' \
+			>> @p.@kernel.-@luop.-auto_.h
+echo '#if 0'            >> @p.@kernel.-@luop.-auto_.h
+echo_Message            >> @p.@kernel.-@luop.-auto_.h
+cat ../DEV_INFO         >> @p.@kernel.-@luop.-auto_.h
+echo '<--'              >> @p.@kernel.-@luop.-auto_.h
+cat ../CURRENT_GPU      >> @p.@kernel.-@luop.-auto_.h
+echo '-->'              >> @p.@kernel.-@luop.-auto_.h
+echo '#endif'           >> @p.@kernel.-@luop.-auto_.h
+if [ $H_OK -eq 1 ]; then
+cat @p.@kernel.-@luop.-auto2.h	>> @p.@kernel.-@luop.-auto_.h
+fi
+echo '#endif'           >> @p.@kernel.-@luop.-auto_.h
+
+mv @p.@kernel.-@luop.-auto_.h @p.@kernel.-@luop.-auto2.h
+cp @p.@kernel.-@luop.-auto2.h ..
+
+
+echo '#if defined(PRESERVE_DROP)'	 > param-@p.@kernel.@lu..h
+echo '#undef	PRESERVE_DROP'		>> param-@p.@kernel.@lu..h
+echo '#endif'				>> param-@p.@kernel.@lu..h
+echo '#define	PRESERVE_DROP	1'	>> param-@p.@kernel.@lu..h
+cp param-@p.@kernel.@lu..h ..
+
+
+cat @p.@kernel.-@luop.-auto.h
+cat @p.@kernel.-@luop.-auto2.h
+
+cd ../../src
+
+\rm @p.@kernel._@luop..cu_o @p.@kernel._@luop..cu_lo
+make
+
+cd ../bench
+
+\rm test-@p..o test2-@p..o
+make
+
+echo "Complete phase e"
+
+echo 1  >  IN-abc
+echo 10 >> IN-abc
+echo -1 >> IN-abc
+
+if [ $H_OK -eq 1 ]; then
+timeout -s KILL 30  ./test-@p.@kernel.-@lu. IN-abc >& /dev/null
+timeout -s KILL 30  ./test-@p.@kernel.-@lu. IN-abc >& /dev/null
+
+timeout -s KILL 600 ./test-@p.@kernel.-@lu. IN-medium
+if [ $? -eq 137 ]; then
+timeout -s KILL 600 ./test-@p.@kernel.-@lu. IN-medium
+fi
+fi
+
+echo "Complete phase f1"
+
+if [ $H_OK -eq 1 ]; then
+timeout -s KILL 20   ./test2-@p.@kernel.-@lu. IN-medium >& /dev/null
+timeout -s KILL 3600 ./test2-@p.@kernel.-@lu. IN-medium
+if [ $? -eq 137 ]; then
+timeout -s KILL 3600 ./test2-@p.@kernel.-@lu. IN-medium
+fi
+fi
+
+echo "Complete phase f2"
+
+cd ../tuning
+
+touch .done-@p.@kernel.@lu.
+
+echo_Message end
+
+exit 0
+

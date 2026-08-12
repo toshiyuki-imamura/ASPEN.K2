@@ -1,0 +1,325 @@
+------------------------------------------------------------------------------
+    README file for ASPEN.K2
+------------------------------------------------------------------------------
+
+VERSION 1.12/Shimada     : August 11, 2026
+VERSION 1.11/Fujieda     : May     1, 2026
+VERSION 1.10/Okabe       : April  22, 2024
+VERSION 1.9p1/Mariko     : Oct.   22, 2022
+VERSION 1.9/Fuchu        : April   4, 2022
+VERSION 1.8p1/Ejiri      : Jan.   12, 2022
+VERSION 1.8/Okitsu       : April   6, 2021
+VERSION 1.7/Yui          : March   5, 2020
+VERSION 1.6p4/Kanbara    : Oct.    1, 2018
+VERSION 1.6p3/Yoshiwara  : Aug.    6, 2018
+VERSION 1.6p2/Hara       : Jan.    1, 2018
+VERSION 1.6p1/Numazu     : Oct.    8, 2017
+VERSION 1.6/Mishima      : April   6, 2017
+VERSION 1.5p9/Hakone     : Nov.   25, 2016
+VERSION 1.5p8/Odawara    : July   21, 2016
+VERSION 1.5p7/Oiso       : May    20, 2016
+VERSION 1.5p6/Hiratsuka  : Nov.   13, 2015
+VERSION 1.5p5/Fujisawa   : August 31, 2015
+VERSION 1.5p4/Totsuka    : April  30, 2015
+VERSION 1.5p3/Hodogaya   : March   3, 2015
+VERSION 1.5p2/Kanagawa   : Jan.   16, 2015
+VERSION 1.5p1/Kawasaki   : Dec.   22, 2014
+VERSION 1.5  /Shinagawa  : Dec.   19, 2014
+VERSION 1.4p1/Nihonbashi : Oct.   30, 2014
+VERSION 1.4    : Sept.  12, 2014
+VERSION 1.3p1  : August 16, 2014
+VERSION 1.3    : August 14, 2014
+VERSION 1.2    : August  6, 2014
+VERSION 1.0    : June   20, 2014
+
+
+
+** Introduction
+
+ASPEN.K2 provides GPU/CUDA users with automatic-tuned high performance
+Level2 BLAS kernels. ASPEN.K2 comes from a shortened name of
+`Automatic Stabilizing and PEformance tuNing of level 2 BLAS Kernels.'
+
+ASPEN.K2 is Open Source Software (OSS).
+See the copyright form 'LICENCE.txt'.
+
+
+
+** Prerequisite **
+   CUDA:: SDK 13.x later
+   CC: GCC or Intel OneAPI
+   PYTHON:: version 3, aliased to python or python3, and numpy, scipy, and cxxfilt
+   BLAS:: OpenBLAS or Intel MKL
+
+** Getting started.
+
+ 0) You are supposed to be at the directory 'ASPEN.K2[-(version)]/',
+    where you got extracted the tarball, and set up two environment
+    variables, $CUDA_PATH and $ASPEN_GPU_ID,
+    correctly in advace of the following steps.
+    $CUDA_PATH is the directory on which CUDA is installed, and
+    $ASPEN_GPU_ID is optional and it specifies the GPU ID on which
+    ASPEN.K2 will be tuned up.
+ 1) Modify src/Makefile appropriately.
+ 2) Do 'make' or 'make tuned'. Then, lib/libaspen.a is created.
+    By default, the library is optimized for a GeForce GTX1080.
+ 3) Do 'make benchmark'. This yields benchmark programs in bench/.
+ 4) See include/aspen.h for available API's of ASPEN.K2.
+ 5) If you need the AT version which is optimized on your GPU environment,
+    do 'make tuned-new'. This overwrites the libaspen.a by the auto-tuned
+    version in lib/. However, fully tuning might take a day.
+    If your GPU faciliates large GDDR, for example more than 10GB, you
+    need a couple of days.
+    Or, if you want to tune up only the specific routine 'XXXX',
+    do 'make tuned-new-XXXX', XXXX refers to
+    '([dswh]|i{16,32,64,128})symv(_[ul])' or '([kczu])hemv(_[ul])'.
+    While the tuning process, two applications; Intel-MKL, python with numpy
+    and scipy packages, are required to predict the performance.
+    If compilation fails, please modify tuning/*.sh carefully.
+ 6) If you need to tune up again, do 'make tuned-new'
+    or 'make tuned-new-XXXX'.
+
+ ** CAUTION **
+    Please do not use 'make -j', because concurrent make would
+    access a GPU by multiple precesses simultaneously,
+    and then violate intermediate data.
+
+
+
+** Release information
+
+Version 1.12:
+Experimental support of CUDA 13.3. and Blackwell generations.
+Replace "atom.add" by "red.add" to reduce the memory cycle pressure.
+Use a strong "red.add" to avoid a racing among remote TBs.  
+Tweak the ocuupancy calculation based on opt-in shared memory model.
+Tweak on tuning script, which leverage the Paleto-optimul condition.
+Static parametrization of the reduce_in_block kernels.
+If exclusive ops are not neccessary, swich (by buffer=NULL) bewteen tickect and atom/red mode.
+Experimental implementation of an asyncronous-grouop non-bulk copy by "cp.async" gmem -> smem.
+
+Version 1.11:
+Experimental support of CUDA 13.2, 13.1, 13.0, and 12.X.
+and new HW generations of Ada, and Hopper, and Blackwell(GB120).
+Obsolate the task control mechanism.
+Introduce multi-ticket zoning algorithm, which may be categorized as a hybrid of mutex and scatter-and-gather algorithm.
+Supporting to choose reproducible or non-reproducible atomic algorithm.
+Introduced strong memory order mechanism, to mix up atomic operations.
+__int128, which is alised int128 internally, has been adapted, while it was emulation by two int64_t's in the former versions.
+Tweak on tuning scripts, which does not adapt our policies that
+activate resource must be largest enough.
+Debug on the occupancy calculation if CG > 800.
+Rename include/<typename>.h into include/_<typename>.h to avoid filename conflict with system header files.
+
+Version 1.10:
+Fully switch the Confirmed store to the atomicAdd/pokeAdd.
+Experimental support of CUDA 12.0, and 12.1, but not support of int128_t.
+Obsolated the texture-type management on CUDA 12.0 later.
+Parameters of AdaLovelace and Hopper are included, but not confirmed correct performances on them.
+half dtatype is overridded thanks to the introduction of half.h,
+which can emulate IEE754 FP16 compatible half precision on the host side.
+Slightly modified the DD multiplication scheme.
+Slightly modified ptx-inlines with a predicated condition.
+Slightly modified nvcc options.
+
+Version 1.9p1:
+Experimental support of CUDA 11.7, and 11.8.
+Slightly modified a few warp-diverged loops.
+
+Version 1.9:
+Experimental support of CUDA 11.6.
+Thread Block sync model is modified, and adjusted for the A100 model, which does not fully activate MULT*numMP thread-blocks initially, also for avoidance of the re-entry from unexpected failures.
+Simplified the kernel template, but also added L+U kernel again to improve performance for small size cases.
+Reduced the division operations so that they are issued on the master thread and broadcasted via shared memory.
+Slightly modified Store_with_confirmation to simplify the loop structure as a single form.
+KHEMV (Komplex HEMV) kernel performing complex number based on the half precision (fp16 aka half) has been supported.
+Half precision for GP10X compatibles is enabled, but very slow.
+Fixed the internal-int64 casting for multiplications by int32 integer numbers.
+
+Version 1.8p1:
+Experimental support of CUDA 11.3, 11.3.1, 11.4, and 11.5.
+Small revisions on this README.
+Random sampling has been adapted to avoid lower-clock workload due to the unexpected mode transition around P8 to P2 states.
+Tuning profiles on A100 (GA100), RTX-A5000, and RTX3090 (GA102), are included.
+
+Version 1.8:
+Support of CUDA 11.0, 11.1, and 11.2.
+Support of integer SYMV kernels; i128symv, i64symv, i32symv, and i16symv.
+Modify multi-regsiter accumulation functions summing along a warp.
+Use atomicAdd for 32bit builtin ops with exclusive control to keep the bitwise reproducibility. 
+Modify data-conversion mechanism by using 'reinterpret_cast<datatype *>'.
+Tweak on a warmup mode, which may, however, not be so effective...
+Introduce new data structures in aspen_const.h, aspen_d[df]{real|complex}.h and aspen_int{16,128}.h, referred to the CUDA SDK (cuda_fp16.h).
+Tweak on a memory sychnorozation, which has been defined from sm70/PTX v6.0.
+Experimental support of HSYMV
+Experimental support of sm_80 and sm_86, so called Ampere series.
+
+Version 1.7:
+Support of CUDA 10.0, 10.1 and 10.2.
+Experimental support of sm_75, Turing core
+Respond to unexpected infinite-loops, which happned when exceptional NaNs due to the out-of-bound access or invalid region of the triangular matrix.
+Unification of the source codes both in upper and lower.
+Rewrite of some shell scripts into python.
+Deprecated support on the old CUDA SDKs, such as 9.x or prior.
+
+Version 1.6p4:
+Volatile ld-st operations via shared memory among threads in a thread block.
+Some updates and arranges for the header files.
+Replace cudaThreadSyncronize() to cudaDeviceSynchronize().
+Experimental support of sm_75, Turing core.
+
+Version 1.6p3:
+Support CUDA 9.1 and 9.2.
+Support sm_70, Volta GV100 core (only confirmed on a TITAN-V).
+Partly enchanced v2 or v4 accesses of vectors stored in shared memory.
+
+Version 1.6p2:
+Support CUDA 9.0.
+Support stride parameter of the vectors x and y: ie. incx and incy.
+Experimental support of sm_70, Volta GV100 core.
+Tune up the vector accesses such as double2 and float[24].
+Extend the sumup routine processing multiple registers,
+specifically, from 8 upto 16 parameter registers.
+Again, minor modification for the parameter search scripts.
+Bug fix for the occupancy calculation in case of GP100.
+Obsolate the old CUDA versions, such as 7.5 or prior.
+
+Version 1.6p1:
+Modify the get_mult command for sm_37, sm_53, and sm_6x.
+Tune up the diagonal block kernel.
+Minor modification for the parameter search scripts.
+Exprimental support of CUDA 9.0.
+
+Version 1.6:
+Support the double-double format; wsymv and uhemv.
+Support both static and shared library formats: libaspen.a and libaspen.so.
+Support stream interface, ASPEN_setStream and ASPEN_getStream.
+Unify symv and hemv templates into hesymv template.
+Tune up the kernel by introducing internal fma2 and add2 operations.
+Minor modification for the parametre search scripts.
+Gemv kernels have been obsolated from this version.
+
+Version 1.5p9:
+Support Complex functions; zhemv and chemv.
+Minor modification for the parametre search script of symv_reguse.sh
+so as not to miss the candidate to be explored.
+
+Version 1.5p8:
+Modify the block-grid shape as a two-dimensional grid.
+Simplify the compilation process which is done for each sm_(20,30,...).
+Modify the Makefile rules to reduce the compliation time.
+Exprimental support of CUDA 8.0 and pascal architectures (sm_(60,61,62)).
+Exprimental support of half precision of Level1 BLAS.
+
+Version 1.5p7:
+Loop re-structured technique is employed for symv kernels.
+Correct the capacity of the shared memory for the Maxwell architecture.
+Tuning shell scripts is slightly changed so as to allow a wider-ranged
+parameters space,
+      max{32, BASE(=VX*m)} <= BLOCK_SIZE*VX <= 512,
+      32 <= BLOCK_SIZE(=32*k) <= 256, 1<=VX<=8, and 1 <= BASE(=VX*m) <= 192.
+      In addition, multiplicity >= 2.
+Also user can choose whether rough and full search modes by the environment
+variable ASPEN_TUNING_LEVEL. If ASPEN_TUNING_LEVEL equals to 'ROUGH' or
+'FULL', the search mode is designated in rough search or Bruto-force search,
+respectively. BUT, the ROUGH mode yields acceptable good result in most cases.
+Introduce ASPEN_ERROR_CHECK to control the error check during tuning process.
+Arrange the header files.
+Implement a couple of Level 1 BLAS routines such as axpy, scal, etc.
+Preliminary version of cu(Float|Double)complex for Level 1 BLAS.
+
+Version 1.5p6:
+Minor change for symv kernels.
+Minor change for tuning shell scripts to reduce the number of parameter
+samplings.
+Support CUDA 7.5.
+
+Version 1.5p5:
+Minor change for symv kernels so as not to fall in deadlock.
+Minor change for tuning shell scripts to reduce the number of parameter
+samplings.
+
+Version 1.5p4:
+Minor change for symv kernels allowing wide-ranged parameters, especially
+MULTIPLICITY=1 and BLOCK_SIZE*VX <= 512.
+Minor change for reduction rountines.
+Minor change for tuning shell scripts.
+Reformat the source files by the indent mechanism of the emacs C++-mode.
+
+Version 1.5p3:
+Minor change for [ds]symv_l kernels to reduce the register consumption.
+Obsolate the L+U algorithm adpopted in [ds]symv_u kernels.
+Bug fix for [ds]gemv_n in case of non-square matrices.
+Support both CUDA 7.0RC and CUDA 6.5 on which 'sm_52' is available.
+Bug fix for the occupancy calculation in case of the Fermi architecture.
+
+Version 1.5p2:
+Bug fix for an infinite loop trap in [ds]symv_l kernels.
+Minor change for [ds]symv_l kernels.
+Invalidate the Tesla kernel implementations,
+Modify Makefile and shell scripts not to use the deviceQuery command.
+
+Version 1.5p1:
+Modify [ds]symv_[lu] kernels to support the sumup routine via shared memory.
+
+Version 1.5:
+Add 'L'ower triangular matrix format for [ds]symv.
+Modify tuning scripts of [ds]symv_[lu].sh to support full multiplicity upto
+32 for the Maxwell architectures.
+
+Version 1.4p1:
+Experimental support for sm_50 (Maxwell aka GM107) and a brandnew architecture
+refered to sm_52 (Maxwell2 aka GM204).
+Minor bug fix for a script which generates if-then rules to switch parameters.
+Minor change for SYMV kernel in oder to avoid deadlock.
+Bug fix in the occupancy calculation for larger shared memory (32/48KB).
+Rewrite Makefiles' rules.
+
+Version 1.4:
+Divide the Kepler codes into sm_30 (Kepler aka GK104) and sm_35 (Kepler2
+aka GK106 later).
+Minor bug fix in [ds]symv.sh and minor change in [ds]symv kernels.
+Minor change in the searching algorithm for [ds]symv by 3-step algorithm.
+Modify the primal Makefile and remove redundant source files.
+Bug fix in the occupancy calculation for the Fermi architecture.
+
+Version 1.3p1:
+Minor bug fix.
+From this version, ASPEN.K2 is released as Open Source Software.
+
+Version 1.3:
+Minor bug fix and vector2 load is newly applied for SYMV kernel.
+
+Version 1.2:
+New kernel implementation for SYMV is introduced.
+
+Version 1.0:
+The current release supports some of the Level 2 BLAS kernels
+for the CUDA environment focused on the Fermi and Kepler architectures
+with CUDA version 5.5 later.
+(Maxwell architecture and CUDA prior to 5.0 are not officially supported.)
+The first release supports [DS]GEMV, both operations for normal 'N or n'
+and transposition 'T or t', [DS]SYMV, only for the upper ('U or u')
+triangular format.
+
+
+
+** Available functios
+
+ 1) {I{16,32,64,128},[DSWH]}SYMV, both the upper ('U or u') and the lower
+    ('L or l') triangular matrix formats for a symmetric matrix ('L or l'
+    is supported from version 1.5)
+ 2) [ZCUK]HEMV, both the upper ('U or u') and the lower ('L or l') triangular
+    matrix formats for a hermite matrix (the lower triangular format,
+    in short 'L or l', is supported from version 1.5, and the FP16 precision,
+    'K', format is suppoted from 1.9)
+
+ *) HSYMV kernel works on the most of GPU later than or same as Pascal.
+ *) GEMV kernels are obsolated from version 1.6
+
+
+** Bug report
+
+For bug report or additional information,
+please contact the corresponding developper,
+imamura.toshiyuki[at]riken.jp

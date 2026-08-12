@@ -1,0 +1,176 @@
+#!/bin/sh
+
+Make_shells() {
+
+	local outopt=$1
+	local p=$2
+	local lu=$3
+
+	if [ $lu = 'u' ]; then
+		luop='upper'
+		LU='U'
+	fi
+	if [ $lu = 'l' ]; then
+		luop='lower'
+		LU='L'
+	fi
+
+	if [ $p = 'd' ]; then
+		P='D'
+		kernel='symv'
+		KERNEL='SYMV'
+		D=''
+		SIZEOF=8
+	fi
+	if [ $p = 's' ]; then
+		P='S'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='2'
+		SIZEOF=4
+	fi
+	if [ $p = 'h' ]; then
+		P='H'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='5'
+		SIZEOF=2
+	fi
+	if [ $p = 'w' ]; then
+		P='W'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='3'
+		SIZEOF=16
+	fi
+	if [ $p = 'z' ]; then
+		P='Z'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D='3'
+		SIZEOF=16
+	fi
+	if [ $p = 'c' ]; then
+		P='C'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D=''
+		SIZEOF=8
+	fi
+	if [ $p = 'k' ]; then
+		P='K'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D='2'
+		SIZEOF=4
+	fi
+	if [ $p = 'u' ]; then
+		P='U'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D='4'
+		SIZEOF=32
+	fi
+
+	if [ $p = 'i128' ]; then
+		P='I128'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='3'
+		SIZEOF=16
+	fi
+	if [ $p = 'i64' ]; then
+		P='I64'
+		kernel='symv'
+		KERNEL='SYMV'
+		D=''
+		SIZEOF=8
+	fi
+	if [ $p = 'i32' ]; then
+		P='I32'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='2'
+		SIZEOF=4
+	fi
+	if [ $p = 'i16' ]; then
+		P='I16'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='5'
+		SIZEOF=2
+	fi
+
+	if [ $outopt = '0' ]; then
+		input=template_sh
+		output=$p$kernel'_'$lu.sh
+	fi
+	if [ $outopt = 'a' ]; then
+		input=template_a_sh
+		output=$p$kernel$lu'_'a.sh
+	fi
+	if [ $outopt = 'b0' ]; then
+		input=template_b0_sh
+		output=$p$kernel$lu'_'b0.sh
+	fi
+	if [ $outopt = 'b1' ]; then
+		input=template_b1_sh
+		output=$p$kernel$lu'_'b1.sh
+	fi
+	if [ $outopt = 'b2' ]; then
+		input=template_b2_sh
+		output=$p$kernel$lu'_'b2.sh
+	fi
+	if [ $outopt = 'b3' ]; then
+		input=template_b3_sh
+		output=$p$kernel$lu'_'b3.sh
+	fi
+	if [ $outopt = 'b4' ]; then
+		input=template_b4_sh
+		output=$p$kernel$lu'_'b4.sh
+	fi
+	if [ $outopt = 'c' ]; then
+		input=template_c_sh
+		output=$p$kernel$lu'_'c.sh
+	fi
+	if [ $outopt = '-' ]; then
+		input=temp_sh
+		output=$p$kernel'__'$lu.sh
+	fi
+	if [ $outopt = 'B' ]; then
+		input=temp_b3_sh
+		output=$p$kernel$lu'__'b3.sh
+	fi
+
+	cat $input | \
+		sed "s/@p./$p/g"            | \
+		sed "s/@P./$P/g"            | \
+		sed "s/@kernel./$kernel/g"  | \
+		sed "s/@KERNEL./$KERNEL/g"  | \
+		sed "s/@luop./$luop/g"      | \
+		sed "s/@lu./$lu/g"          | \
+		sed "s/@LU./$LU/g"          | \
+		sed "s/@D./$D/g"            | \
+		sed "s/@SIZEOF./$SIZEOF/g"  > $output
+
+}
+
+F_LIST='u l'
+P_LIST='w d s h u z c k i128 i64 i32 i16'
+
+for PRECISION in $P_LIST
+do
+    for FORMAT in $F_LIST
+    do
+
+#	Make_shells 0  $PRECISION $FORMAT
+	Make_shells a  $PRECISION $FORMAT
+	Make_shells b0 $PRECISION $FORMAT
+	Make_shells b1 $PRECISION $FORMAT
+	Make_shells b2 $PRECISION $FORMAT
+	Make_shells b3 $PRECISION $FORMAT
+	Make_shells b4 $PRECISION $FORMAT
+
+    done
+done
+

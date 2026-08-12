@@ -1,0 +1,16 @@
+#ZHEMVU#4080#GeForce RTX4080set key bottom
+set grid
+set pointsize 0.3
+set yrange [0:]
+set title "ZHEMVU on a <GeForce RTX4080>"
+set xlabel "[dimension]"
+set ylabel "[GFLOPS]"
+set term post eps color
+set output "plot-data-4080-ZHEMVU.eps"
+plot   "log-ASPEN.K2-1.12-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" u 2:($5<2*663.16?$5:-1000) t "log-ASPEN.K2-1.12-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" , "log-CUDA-13.3-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" u 2:($5<2*663.16?$5:-1000) t "log-CUDA-13.3-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" , "log-CUDA-13.3-ZHEMVUnoAtomic-RTX4080-610.43.02-2026:08:09-02:01:26" u 2:($5<2*663.16?$5:-1000) t "log-CUDA-13.3-ZHEMVUnoAtomic-RTX4080-610.43.02-2026:08:09-02:01:26" 
+clear
+set term png
+set output "plot-data-4080-ZHEMVU.png"
+plot   "log-ASPEN.K2-1.12-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" u 2:($5<2*663.16?$5:-1000) t "log-ASPEN.K2-1.12-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" , "log-CUDA-13.3-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" u 2:($5<2*663.16?$5:-1000) t "log-CUDA-13.3-ZHEMVU-RTX4080-610.43.02-2026:08:09-02:01:26" , "log-CUDA-13.3-ZHEMVUnoAtomic-RTX4080-610.43.02-2026:08:09-02:01:26" u 2:($5<2*663.16?$5:-1000) t "log-CUDA-13.3-ZHEMVUnoAtomic-RTX4080-610.43.02-2026:08:09-02:01:26" 
+clear
+exit

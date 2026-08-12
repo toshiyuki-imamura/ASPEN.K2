@@ -1,0 +1,105 @@
+#!/bin/sh
+
+echo_Message()
+{
+	echo '<--/****************************************'
+	echo 'Automatic Performance Tuning for @P.@KERNEL.-@LU.'
+	date
+	echo -n 'Host on '; echo `hostname`
+	echo 'Device is '$DEVICE
+	if [ x${1} = xbegin ]; then
+		echo 'Start.'
+	fi
+	if [ x${1} = xend ]; then
+		echo 'Successfully completed.'
+	fi
+	if [ x${1} = xterminate ]; then
+		echo 'Terminated unfortunately.'
+	fi
+	echo '****************************************/-->'
+}
+
+
+export LANG=C
+
+if [ x${CUDA_PATH} != x ]; then
+        export LD_LIBRARY_PATH=$CUDA_PATH/lib64:$LD_LIBRARY_PATH
+fi
+export LD_LIBRARY_PATH=`pwd`/../lib:$LD_LIBRARY_PATH
+
+
+echo_Message begin
+
+/bin/sh ../@p.@kernel.@lu.__b3.sh log-*-X-X-X
+/bin/sh ../@p.@kernel.@lu._c.sh
+$PYTHON ../d_filter.py @p.@kernel.-@luop.-auto3.h @p.@kernel.-@luop.-auto2.h
+
+echo "Complete phase d"
+
+echo '#if 0'             > @p.@kernel.-@luop.-auto_.h
+echo_Message            >> @p.@kernel.-@luop.-auto_.h
+cat ../DEV_INFO         >> @p.@kernel.-@luop.-auto_.h
+echo '<--'              >> @p.@kernel.-@luop.-auto_.h
+cat ../CURRENT_GPU      >> @p.@kernel.-@luop.-auto_.h
+echo '-->'              >> @p.@kernel.-@luop.-auto_.h
+echo '#endif'           >> @p.@kernel.-@luop.-auto_.h
+cat @p.@kernel.-@luop.-auto.h	>> @p.@kernel.-@luop.-auto_.h
+mv @p.@kernel.-@luop.-auto_.h @p.@kernel.-@luop.-auto.h
+cp @p.@kernel.-@luop.-auto.h ..
+
+echo '#if 0'             > @p.@kernel.-@luop.-auto_.h
+echo_Message            >> @p.@kernel.-@luop.-auto_.h
+cat ../DEV_INFO         >> @p.@kernel.-@luop.-auto_.h
+echo '<--'              >> @p.@kernel.-@luop.-auto_.h
+cat ../CURRENT_GPU      >> @p.@kernel.-@luop.-auto_.h
+echo '-->'              >> @p.@kernel.-@luop.-auto_.h
+echo '#endif'           >> @p.@kernel.-@luop.-auto_.h
+cat @p.@kernel.-@luop.-auto2.h	>> @p.@kernel.-@luop.-auto_.h
+mv @p.@kernel.-@luop.-auto_.h @p.@kernel.-@luop.-auto2.h
+cp @p.@kernel.-@luop.-auto2.h ..
+
+echo '#if defined(PRESERVE_DROP)'	 > param-@p.@kernel.@lu..h
+echo '#undef    PRESERVE_DROP'		>> param-@p.@kernel.@lu..h
+echo '#endif'				>> param-@p.@kernel.@lu..h
+echo '#define   PRESERVE_DROP   1'	>> param-@p.@kernel.@lu..h
+cp param-@p.@kernel.@lu..h ..
+
+cat @p.@kernel.-@luop.-auto.h
+cat @p.@kernel.-@luop.-auto2.h
+
+cd ../../src
+
+\rm @p.@kernel._@luop..cu_o
+make
+
+cd ../bench
+
+\rm test-@p..o test2-@p..o
+make 
+
+echo "Complete phase e"
+
+timeout -s KILL 4   ./test-@p.@kernel.-@lu. IN-medium >& /dev/null
+timeout -s KILL 600 ./test-@p.@kernel.-@lu. IN-medium
+if [ $? -eq 137 ]; then
+timeout -s KILL 600 ./test-@p.@kernel.-@lu. IN-medium
+fi
+
+echo "Complete phase f1"
+
+timeout -s KILL 4    ./test2-@p.@kernel.-@lu. IN-medium >& /dev/null
+timeout -s KILL 3600 ./test2-@p.@kernel.-@lu. IN-medium
+if [ $? -eq 137 ]; then
+timeout -s KILL 3600 ./test2-@p.@kernel.-@lu. IN-medium
+fi
+
+echo "Complete phase f2"
+
+cd ../tuning
+
+touch .done-@p.@kernel.@lu.
+
+echo_Message end
+
+exit 0
+

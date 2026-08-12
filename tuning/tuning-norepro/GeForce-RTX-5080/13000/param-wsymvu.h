@@ -1,0 +1,13 @@
+#define	BLOCK_SIZE	16
+#define	VX		8
+#define	UX		128
+#define	__KERNEL101 1
+#define	__KERNEL111 1
+#define	__KERNEL121 1
+#define	__KERNEL131 1
+#define	__KERNEL141 1
+#define	__KERNEL151 1
+#define	__KERNEL161 1
+#define	__KERNEL171 1
+#define	__KERNEL181 1
+#define	__KERNEL191 1

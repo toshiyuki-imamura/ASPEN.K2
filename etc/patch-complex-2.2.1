@@ -1,0 +1,171 @@
+*** include/half.hpp.orig	2025-03-02 14:29:12.000000000 +0900
+--- include/half.hpp	2025-12-30 17:10:37.000000000 +0900
+***************
+*** 817,823 ****
+  		/// \exception FE_OVERFLOW on overflows
+  		/// \exception FE_UNDERFLOW on underflows
+  		/// \exception FE_INEXACT if value had to be rounded or \a I is `true`
+! 		template<std::float_round_style R,bool I> HALF_CONSTEXPR_NOERR unsigned int rounded(unsigned int value, int g, int s)
+  		{
+  		#if HALF_ERRHANDLING
+  			value +=	(R==std::round_to_nearest) ? (g&(s|value)) :
+--- 817,823 ----
+  		/// \exception FE_OVERFLOW on overflows
+  		/// \exception FE_UNDERFLOW on underflows
+  		/// \exception FE_INEXACT if value had to be rounded or \a I is `true`
+! 		template<std::float_round_style R,bool I_> HALF_CONSTEXPR_NOERR unsigned int rounded(unsigned int value, int g, int s)
+  		{
+  		#if HALF_ERRHANDLING
+  			value +=	(R==std::round_to_nearest) ? (g&(s|value)) :
+***************
+*** 826,834 ****
+  			if((value&0x7C00) == 0x7C00)
+  				detail::raise(FE_OVERFLOW);
+  			else if(value & 0x7C00)
+! 				detail::raise(FE_INEXACT, I || (g|s)!=0);
+  			else
+! 				detail::raise(FE_UNDERFLOW, !(HALF_ERRHANDLING_UNDERFLOW_TO_INEXACT) || I || (g|s)!=0);
+  			return value;
+  		#else
+  			return	(R==std::round_to_nearest) ? (value+(g&(s|value))) :
+--- 826,834 ----
+  			if((value&0x7C00) == 0x7C00)
+  				detail::raise(FE_OVERFLOW);
+  			else if(value & 0x7C00)
+! 				detail::raise(FE_INEXACT, I_ || (g|s)!=0);
+  			else
+! 				detail::raise(FE_UNDERFLOW, !(HALF_ERRHANDLING_UNDERFLOW_TO_INEXACT) || I_ || (g|s)!=0);
+  			return value;
+  		#else
+  			return	(R==std::round_to_nearest) ? (value+(g&(s|value))) :
+***************
+*** 846,857 ****
+  		/// \return nearest integral half-precision value
+  		/// \exception FE_INVALID for signaling NaN
+  		/// \exception FE_INEXACT if value had to be rounded and \a I is `true`
+! 		template<std::float_round_style R,bool E,bool I> unsigned int integral(unsigned int value)
+  		{
+  			unsigned int abs = value & 0x7FFF;
+  			if(abs < 0x3C00)
+  			{
+! 				detail::raise(FE_INEXACT, I);
+  				return ((R==std::round_to_nearest) ? (0x3C00&-static_cast<unsigned>(abs>=(0x3800+E))) :
+  						(R==std::round_toward_infinity) ? (0x3C00&-(~(value>>15)&(abs!=0))) :
+  						(R==std::round_toward_neg_infinity) ? (0x3C00&-static_cast<unsigned>(value>0x8000)) :
+--- 846,857 ----
+  		/// \return nearest integral half-precision value
+  		/// \exception FE_INVALID for signaling NaN
+  		/// \exception FE_INEXACT if value had to be rounded and \a I is `true`
+! 		template<std::float_round_style R,bool E,bool I_> unsigned int integral(unsigned int value)
+  		{
+  			unsigned int abs = value & 0x7FFF;
+  			if(abs < 0x3C00)
+  			{
+! 				detail::raise(FE_INEXACT, I_);
+  				return ((R==std::round_to_nearest) ? (0x3C00&-static_cast<unsigned>(abs>=(0x3800+E))) :
+  						(R==std::round_toward_infinity) ? (0x3C00&-(~(value>>15)&(abs!=0))) :
+  						(R==std::round_toward_neg_infinity) ? (0x3C00&-static_cast<unsigned>(value>0x8000)) :
+***************
+*** 860,866 ****
+  			if(abs >= 0x6400)
+  				return (abs>0x7C00) ? detail::signal(value) : value;
+  			unsigned int exp = 25 - (abs>>10), mask = (1<<exp) - 1;
+! 			detail::raise(FE_INEXACT, I && (value&mask));
+  			return ((	(R==std::round_to_nearest) ? ((1<<(exp-1))-(~(value>>exp)&E)) :
+  						(R==std::round_toward_infinity) ? (mask&((value>>15)-1)) :
+  						(R==std::round_toward_neg_infinity) ? (mask&-(value>>15)) :
+--- 860,866 ----
+  			if(abs >= 0x6400)
+  				return (abs>0x7C00) ? detail::signal(value) : value;
+  			unsigned int exp = 25 - (abs>>10), mask = (1<<exp) - 1;
+! 			detail::raise(FE_INEXACT, I_ && (value&mask));
+  			return ((	(R==std::round_to_nearest) ? ((1<<(exp-1))-(~(value>>exp)&E)) :
+  						(R==std::round_toward_infinity) ? (mask&((value>>15)-1)) :
+  						(R==std::round_toward_neg_infinity) ? (mask&-(value>>15)) :
+***************
+*** 881,887 ****
+  		/// \exception FE_OVERFLOW on overflows
+  		/// \exception FE_UNDERFLOW on underflows
+  		/// \exception FE_INEXACT if value had to be rounded or \a I is `true`
+! 		template<std::float_round_style R,unsigned int F,bool S,bool N,bool I> unsigned int fixed2half(uint32 m, int exp = 14, unsigned int sign = 0, int s = 0)
+  		{
+  			if(S)
+  			{
+--- 881,887 ----
+  		/// \exception FE_OVERFLOW on overflows
+  		/// \exception FE_UNDERFLOW on underflows
+  		/// \exception FE_INEXACT if value had to be rounded or \a I is `true`
+! 		template<std::float_round_style R,unsigned int F,bool S,bool N,bool I_> unsigned int fixed2half(uint32 m, int exp = 14, unsigned int sign = 0, int s = 0)
+  		{
+  			if(S)
+  			{
+***************
+*** 892,899 ****
+  			if(N)
+  				for(; m<(static_cast<uint32>(1)<<F) && exp; m<<=1,--exp) ;
+  			else if(exp < 0)
+! 				return rounded<R,I>(sign+static_cast<unsigned int>(m>>(F-10-exp)), static_cast<int>((m>>(F-11-exp))&1), s|((m&((static_cast<uint32>(1)<<(F-11-exp))-1))!=0));
+! 			return rounded<R,I>(sign+(exp<<10)+static_cast<unsigned int>(m>>(F-10)), static_cast<int>((m>>(F-11))&1), s|((m&((static_cast<uint32>(1)<<(F-11))-1))!=0));
+  		}
+  
+  		/// Convert IEEE single-precision to half-precision.
+--- 892,899 ----
+  			if(N)
+  				for(; m<(static_cast<uint32>(1)<<F) && exp; m<<=1,--exp) ;
+  			else if(exp < 0)
+! 				return rounded<R,I_>(sign+static_cast<unsigned int>(m>>(F-10-exp)), static_cast<int>((m>>(F-11-exp))&1), s|((m&((static_cast<uint32>(1)<<(F-11-exp))-1))!=0));
+! 			return rounded<R,I_>(sign+(exp<<10)+static_cast<unsigned int>(m>>(F-10)), static_cast<int>((m>>(F-11))&1), s|((m&((static_cast<uint32>(1)<<(F-11))-1))!=0));
+  		}
+  
+  		/// Convert IEEE single-precision to half-precision.
+***************
+*** 1314,1320 ****
+  		/// \return rounded integer value
+  		/// \exception FE_INVALID if value is not representable in type \a T
+  		/// \exception FE_INEXACT if value had to be rounded and \a I is `true`
+! 		template<std::float_round_style R,bool E,bool I,typename T> T half2int(unsigned int value)
+  		{
+  			unsigned int abs = value & 0x7FFF;
+  			if(abs >= 0x7C00)
+--- 1314,1320 ----
+  		/// \return rounded integer value
+  		/// \exception FE_INVALID if value is not representable in type \a T
+  		/// \exception FE_INEXACT if value had to be rounded and \a I is `true`
+! 		template<std::float_round_style R,bool E,bool I_,typename T> T half2int(unsigned int value)
+  		{
+  			unsigned int abs = value & 0x7FFF;
+  			if(abs >= 0x7C00)
+***************
+*** 1324,1330 ****
+  			}
+  			if(abs < 0x3800)
+  			{
+! 				detail::raise(FE_INEXACT, I);
+  				return	(R==std::round_toward_infinity) ? T(~(value>>15)&(abs!=0)) :
+  						(R==std::round_toward_neg_infinity) ? -T(value>0x8000) :
+  						T();
+--- 1324,1330 ----
+  			}
+  			if(abs < 0x3800)
+  			{
+! 				detail::raise(FE_INEXACT, I_);
+  				return	(R==std::round_toward_infinity) ? T(~(value>>15)&(abs!=0)) :
+  						(R==std::round_toward_neg_infinity) ? -T(value>0x8000) :
+  						T();
+***************
+*** 1338,1344 ****
+  			if((!std::numeric_limits<T>::is_signed && (value&0x8000)) || (std::numeric_limits<T>::digits<16 &&
+  				((value&0x8000) ? (-i<std::numeric_limits<T>::min()) : (i>std::numeric_limits<T>::max()))))
+  				detail::raise(FE_INVALID);
+! 			else if(I && exp > 0 && (m&((1<<exp)-1)))
+  				detail::raise(FE_INEXACT);
+  			return static_cast<T>((value&0x8000) ? -i : i);
+  		}
+--- 1338,1344 ----
+  			if((!std::numeric_limits<T>::is_signed && (value&0x8000)) || (std::numeric_limits<T>::digits<16 &&
+  				((value&0x8000) ? (-i<std::numeric_limits<T>::min()) : (i>std::numeric_limits<T>::max()))))
+  				detail::raise(FE_INVALID);
+! 			else if(I_ && exp > 0 && (m&((1<<exp)-1)))
+  				detail::raise(FE_INEXACT);
+  			return static_cast<T>((value&0x8000) ? -i : i);
+  		}

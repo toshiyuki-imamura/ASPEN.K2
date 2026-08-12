@@ -1,0 +1,6 @@
+If you have one GPU just run ./keepP2 & on any terminal window.
+If you have two GPUs run ./keepP2 device=0 & ./keepP2 device=1 &
+etc.
+
+./keepP2 device=0 & ./keepP2 device=1 & ./keepP2 device=2
+

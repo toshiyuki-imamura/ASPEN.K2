@@ -1,0 +1,172 @@
+#!/bin/sh
+
+Make_shells() {
+
+	local outopt=$1
+	local p=$2
+	local lu=$3
+
+	p1=$p
+
+	if [ $lu = 'u' ]; then
+		luop='upper'
+		LUOP='UPPER'
+		LU='U'
+	fi
+	if [ $lu = 'l' ]; then
+		luop='lower'
+		LUOP='LOWER'
+		LU='L'
+	fi
+
+	if [ $p = 'd' ]; then
+		P='D'
+		kernel='symv'
+		KERNEL='SYMV'
+		D=''
+		SIZEOF=8
+		TYPE='double'
+	fi
+	if [ $p = 's' ]; then
+		P='S'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='2'
+		SIZEOF=4
+		TYPE='float'
+	fi
+	if [ $p = 'h' ]; then
+		P='H'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='5'
+		SIZEOF=2
+		TYPE='half'
+	fi
+	if [ $p = 'w' ]; then
+		P='W'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='3'
+		SIZEOF=16
+		TYPE='ddreal'
+	fi
+	if [ $p = 'z' ]; then
+		P='Z'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D='3'
+		SIZEOF=16
+		TYPE='double_complex'
+	fi
+	if [ $p = 'c' ]; then
+		P='C'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D=''
+		SIZEOF=8
+		TYPE='float_complex'
+	fi
+	if [ $p = 'k' ]; then
+		P='K'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D='5'
+		SIZEOF=8
+		TYPE='half_complex'
+	fi
+	if [ $p = 'u' ]; then
+		P='U'
+		kernel='hemv'
+		KERNEL='HEMV'
+		D='4'
+		SIZEOF=32
+		TYPE='ddcomplex'
+	fi
+
+	if [ $p = 'i16' ]; then
+		p1='i'
+		P='I16'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='5'
+		SIZEOF=2
+		TYPE='int16'
+	fi
+	if [ $p = 'i32' ]; then
+		p1='i'
+		P='I32'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='2'
+		SIZEOF=4
+		TYPE='int32'
+	fi
+	if [ $p = 'i64' ]; then
+		p1='i'
+		P='I64'
+		kernel='symv'
+		KERNEL='SYMV'
+		D=''
+		SIZEOF=8
+		TYPE='int64'
+	fi
+	if [ $p = 'i128' ]; then
+		p1='i'
+		P='I128'
+		kernel='symv'
+		KERNEL='SYMV'
+		D='3'
+		SIZEOF=16
+		TYPE='int128'
+	fi
+
+	if [ $outopt = '0' ]; then
+		input=hesymv_cu
+		output=$p$kernel.cu
+	fi
+
+	if [ $outopt = '1' ]; then
+		input=hesymv_lu_cu
+		output=$p$kernel'_'$luop.cu
+	fi
+
+	if [ $outopt = '2' ]; then
+		input=hesymv_lu_X_cu
+		output=$p$kernel'_'$luop'-X_template'.cu
+	fi
+
+	cat $input | \
+		sed "s/@p\./$p/g"            | \
+		sed "s/@p1\./$p1/g"          | \
+		sed "s/@P\./$P/g"            | \
+		sed "s/@kernel\./$kernel/g"  | \
+		sed "s/@KERNEL\./$KERNEL/g"  | \
+		sed "s/@luop\./$luop/g"      | \
+		sed "s/@LUOP\./$LUOP/g"      | \
+		sed "s/@lu\./$lu/g"          | \
+		sed "s/@LU\./$LU/g"          | \
+		sed "s/@D\./$D/g"            | \
+		sed "s/@TYPE\./$TYPE/g"      | \
+		sed "s/@SIZEOF\./$SIZEOF/g"  > $output
+
+}
+
+F_LIST='u l'
+P_LIST='w d s h u z c k i16 i32 i64 i128'
+
+for PRECISION in $P_LIST
+do
+
+	Make_shells 0  $PRECISION -
+
+    for FORMAT in $F_LIST
+    do
+
+	Make_shells 1  $PRECISION $FORMAT
+	Make_shells 2  $PRECISION $FORMAT
+
+    done
+
+done
+

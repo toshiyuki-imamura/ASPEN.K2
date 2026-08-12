@@ -1,0 +1,180 @@
+#!/bin/bash
+
+export LD_LIBRARY_PATH=../../lib:$LD_LIBRARY_PATH
+
+IN=$1
+
+Make ()
+{
+	cd ../../src
+	\rm @p.@kernel._@luop..cu_o
+	make
+	cd ../bench
+	\rm test-d.o test2-d.o
+	make 
+	cd ../tuning/@p.@kernel.@lu.-current
+}
+
+Do ()
+{
+	echo $IN
+	awk -f ../anal_symv.awk $IN | \
+	tee anal_symv-result | \
+	awk ' \
+		/N= '$N'/{ \
+			print; \
+		} \
+	' | \
+	sort -S 1G -r | \
+	head -200 | \
+	awk ' \
+		BEGIN { \
+			N=0; \
+		} \
+		{ \
+                        if ( N != $2 ) { \
+				N=$2; Tmin=$3; p=1; \
+				print $0" "500000; \
+			} else { \
+                        T = (1.0e+5*(1.0*Tmin-$3)*(1.0*Tmin-$3))/(1.0*Tmin*Tmin); \
+			T = T * sqrt(1.0*N)/100; \
+                        if ( T < 700 ) { \
+                           print $0" "(int(100000*exp(-T)+1)); \
+                        } else { \
+                           print $0" "1; \
+                        } } \
+                        p++; \
+                } \
+	'
+}
+
+Main ()
+{
+N_PATTERN=`cat IN-exe-a | awk '{ if( i>0 && $1>0 ) printf("%d ",$1); i++; }'`
+for N in \
+	$N_PATTERN
+do
+	Do
+done
+}
+
+DO_MATLAB ()
+{
+
+echo "S=[ 0" > cc$ID.m
+
+	awk ' \
+		BEGIN { \
+			line = 0; \
+		} \
+		{ \
+			line++; \
+			if ( line <= 2 )next; \
+			if ( $1 > 0 ) print; \
+		} \
+	' IN-exe-b >> cc$ID.m
+	cat << EOS_M >> cc$ID.m
+];
+
+y=[ 0
+EOS_M
+
+	awk ' \
+		/BLK/{ \
+			gsub(/=/," "); \
+			flag = ($4=='$ID')?1:0; next; \
+		} \
+		/N=/{ \
+			if(flag>0){ \
+				if(flag==1) { \
+					flag++; next; \
+				} \
+				print $2" "$5; flag++; \
+			} \
+		} \
+		' log-@p.@kernel.-AV > log-RANK$ID
+
+	awk ' \
+		{
+			print $2;
+		} \
+		' log-RANK$ID >> cc$ID.m
+
+	cat << EOS_MM >> cc$ID.m
+];
+
+[M,c]=size(S);
+[MM,c]=size(y);
+if MM<M
+	M=MM
+end
+N=S(M)-S(1)+1;
+
+z=zeros(N,1);
+ii=zeros(N,1);
+for j=1:N
+	ii(j) = j+S(1)-1;
+end
+
+norm = y'*y;
+if norm > 0
+
+	EtE = sparse(N,N);
+	for j=1:M
+		k=S(j)-S(1)+1;
+		EtE(k,k)=1;
+	end
+
+	D = sparse(N,N);
+	for j=2:N-1
+		D(j,j-1)=1; D(j,j)=-2; D(j,j+1)=1;
+	end
+	DtD=D'*D/N;
+
+	AA=EtE+DtD;
+
+	yy=zeros(N,1);
+	for j=1:M
+		s = S(j)-S(1)+1;
+		yy(s) = y(j);
+	end
+
+	yyN=yy(N);
+	yy=yy/yyN;
+	z=(AA\yy)*yyN;
+
+end
+
+[ii,z]
+EOS_MM
+
+	octave cc$ID.m
+
+}
+
+	ID_max=16
+	ID_list=" 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 "
+
+for ID in \
+	$ID_list
+do
+
+	touch mat_mat.$ID
+	\rm mat_mat.$ID
+	echo 'Fitting the Kernel.'$ID
+	DO_MATLAB 1> mat_mat.$ID 2> /dev/null
+        awk ' \
+		BEGIN { \
+			flga=0; \
+		} \
+		/ans/ { \
+			flag=1; next; \
+		} \
+		/[0-9]/ { \
+			if ( flag ) printf("%6d %f\n", $1, $2); \
+		} \
+	' mat_mat.$ID > mat.$ID
+
+done
+
+echo "Complete phase b3"

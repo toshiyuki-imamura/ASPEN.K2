@@ -1,0 +1,12 @@
+#!/bin/sh
+
+awk 'BEGIN{\
+	N=22001-64;
+	for(i=0;i<=4*N;i++) { h[i]=(i%N)+64; } \
+	for(i=1;i<80000;i++) { \
+		j=int(rand()*N*4); \
+		k=int(rand()*N*4); \
+		t=h[j];h[j]=h[k];h[k]=t; } \
+	for(i=0;i<=4*N;i++) print h[i]; print -1; exit;\
+ }{exit}'
+

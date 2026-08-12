@@ -1,0 +1,16 @@
+#CHEMVU#5080#GeForce RTX5080set key bottom
+set grid
+set pointsize 0.3
+set yrange [0:]
+set title "CHEMVU on a <GeForce RTX5080>"
+set xlabel "[dimension]"
+set ylabel "[GFLOPS]"
+set term post eps color
+set output "plot-data-5080-CHEMVU.eps"
+plot   "log-ASPEN.K2-1.12-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" u 2:($5<2*1811.03?$5:-1000) t "log-ASPEN.K2-1.12-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" , "log-CUDA-13.3-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" u 2:($5<2*1811.03?$5:-1000) t "log-CUDA-13.3-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" , "log-CUDA-13.3-CHEMVUnoAtomic-RTX5080-610.43.02-2026:08:08-23:47:40" u 2:($5<2*1811.03?$5:-1000) t "log-CUDA-13.3-CHEMVUnoAtomic-RTX5080-610.43.02-2026:08:08-23:47:40" 
+clear
+set term png
+set output "plot-data-5080-CHEMVU.png"
+plot   "log-ASPEN.K2-1.12-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" u 2:($5<2*1811.03?$5:-1000) t "log-ASPEN.K2-1.12-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" , "log-CUDA-13.3-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" u 2:($5<2*1811.03?$5:-1000) t "log-CUDA-13.3-CHEMVU-RTX5080-610.43.02-2026:08:08-23:47:40" , "log-CUDA-13.3-CHEMVUnoAtomic-RTX5080-610.43.02-2026:08:08-23:47:40" u 2:($5<2*1811.03?$5:-1000) t "log-CUDA-13.3-CHEMVUnoAtomic-RTX5080-610.43.02-2026:08:08-23:47:40" 
+clear
+exit
