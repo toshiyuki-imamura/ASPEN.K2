@@ -272,6 +272,14 @@ extern "C"  void    API(max_freq)            ( void );
 
 
 __forceinline__ __device__ uint32_t
+__get_NSMID( void )
+{
+  uint32_t r;
+  asm volatile ( "mov.u32 %0, %nsmid;" : "=r"(r) );
+  return r;
+}
+
+__forceinline__ __device__ uint32_t
 __get_SMID( void )
 {
   uint32_t r;

@@ -72,13 +72,15 @@
 #define __isSF_FORMAT__		(__isFLOAT__ || __isFLOAT_COMPLEX__)
 #define __isSH_FORMAT__		(__isHALF__ || __isHALF_COMPLEX__)
 
-#define	_is16BIT_FORMAT__	(__isHALF__ || __isINT16__)
-#define	_is32BIT_FORMAT__	(__isFLOAT__ || __isINT32__ || __isHALF_COMPLEX__ )
-#define	_is64BIT_FORMAT__	(__isDOUBLE__ || __isDF__ || __isINT64__ || __isFLOAT_COMPLEX__ )
-#define	_is128BIT_FORMAT__	(__isDD__ || __isINT128__ || __isDOUBLE_COMPLEX__ || __isDF_COMPLEX__ )
-#define	_is256BIT_FORMAT__	(__isDD_COMPLEX__)
+#define	__is16BIT_FORMAT__	(__isHALF__ || __isINT16__)
+#define	__is32BIT_FORMAT__	(__isFLOAT__ || __isINT32__ || __isHALF_COMPLEX__ )
+#define	__is64BIT_FORMAT__	(__isDOUBLE__ || __isDF__ || __isINT64__ || __isFLOAT_COMPLEX__ )
+#define	__is128BIT_FORMAT__	(__isDD__ || __isINT128__ || __isDOUBLE_COMPLEX__ || __isDF_COMPLEX__ )
+#define	__is256BIT_FORMAT__	(__isDD_COMPLEX__)
 
 #define	__isCOMPOUND_FORMAT__	(__isDD_FORMAT__ || __isDF_FORMAT__ )
+
+#define	__isSPLITTABLE_FORMAT__	( !(__isCOMPOUND_FORMAT__ || __isINT128__) )
 
 #define	__isBUILTIN_FORMAT__	(__isDOUBLE__ || __isFLOAT__ || __isHALF__ || __isDOUBLE_COMPLEX__ || __isFLOAT_COMPLEX__ || __isHALF_COMPLEX__ || __isINT16__ || __isINT32__ || __isINT64__)
 

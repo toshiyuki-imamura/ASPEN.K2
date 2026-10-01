@@ -91,6 +91,7 @@ def Write_Data( num_kernels, outfile, lu_op, step ) :
 
         out_data = \
 '''    //==========
+    int constexpr REPRO = 1;
     switch ( BLK ) {{
 
 '''
@@ -112,7 +113,7 @@ def Write_Data( num_kernels, outfile, lu_op, step ) :
 '''    #if KERNEL_{id}
     case {id:5d}:
         API_private({name})
-            < GPU_ARCH, scalar_t, {GX:3d}, {GY:3d}, {VX:2d}, {UX:3d}, {M:2d}, {MX:3d} >
+            < REPRO, scalar_t, {GX:3d}, {GY:3d}, {VX:2d}, {UX:3d}, {M:2d}, {MX:3d} >
             ( n, a, lda, x, incx, y, incy, alpha, beta ); break;
     #endif
 '''

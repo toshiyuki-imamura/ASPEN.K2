@@ -27,6 +27,50 @@ error !!
 error !!
 #error un-supported architecture
 #endif // Kepler
+#if GPU_ARCH == Kepler2
+error !!
+#error un-supported architecture
+#endif // Kepler2
+#if GPU_ARCH == Kepler3
+error !!
+#error un-supported architecture
+#endif // Kepler3
+#if GPU_ARCH == Maxwell
+error !!
+#error un-supported architecture
+#endif // Maxwell
+#if GPU_ARCH == Maxwell2
+error !!
+#error un-supported architecture
+#endif // Maxwell2
+#if GPU_ARCH == Maxwell3
+error !!
+#error un-supported architecture
+#endif // Maxwell3
+#if GPU_ARCH == Pascal
+error !!
+#error un-supported architecture
+#endif // Pascal
+#if GPU_ARCH == Pascal1
+error !!
+#error un-supported architecture
+#endif // Pascal1
+#if GPU_ARCH == Pascal2
+error !!
+#error un-supported architecture
+#endif // Pascal2
+#if GPU_ARCH == Pascal3
+error !!
+#error un-supported architecture
+#endif // Pascal3
+#if GPU_ARCH == Volta
+error !!
+#error un-supported architecture
+#endif // Volta
+#if GPU_ARCH == Turing
+error !!
+#error un-supported architecture
+#endif // Turing
 
 
 #define	USE_INLINE	1

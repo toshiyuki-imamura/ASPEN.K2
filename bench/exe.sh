@@ -66,10 +66,10 @@ fi
 
 
 if [ x$ASPEN_V = x ]; then
-ASPEN_V=1.12
+ASPEN_V=1.13
 fi
 if [ x$CUDA_V = x ]; then
-CUDA_V=13.3
+CUDA_V=13.4
 fi
 if [ x$MAGMA_V = x ]; then
 MAGMA_V=2.9.0
@@ -78,11 +78,19 @@ if [ x$KBLAS_V = x ]; then
 KBLAS_V=1.3-beta
 fi
 
+# ASPEN path to lib archives
 ASPEN_LIB_PATH=$HOME/ASPEN.K2-$ASPEN_V/lib
-MAGMA_LIB_PATH=/opt/tmp/magma-$MAGMA_V/lib
+
+# MAGMA path to lib archives
+#MAGMA_LIB_PATH=/opt/tmp/magma-$MAGMA_V/lib
+# MAGMA github clone
+MAGMA_LIB_PATH=/opt/tmp/magma/magma/lib
+
+# KBLAS path to lib arachives, though it is not tested
 KBLAS_LIB_PATH=/opt/tmp/kblas-$KBLAS_V/lib
 
 export LD_LIBRARY_PATH=$ASPEN_LIB_PATH:$MAGMA_LIB_PATH:$KBLAS_LIB_PATH:$LD_LIBRARY_PATH
+
 
 if [ x$EXEC_ASPEN = x ]; then
 EXEC_ASPEN=1

@@ -144,9 +144,13 @@ __ATOMIC_CAS__ ( T * address, T const sup, T const val )
   bin_type * addr = reinterpret_cast < bin_type * > ( address );
   bin_type sup_ = const_binary_convert < bin_type > ( sup );
   bin_type val_ = const_binary_convert < bin_type > ( val );
-  bin_type ret_ = ( Op == ATOMIC_RELAX ) ?
-    atomicCAS ( addr, sup_, val_ ) :
-    atomicCAS_STRONG ( addr, sup_, val_ );
+  bin_type ret_ = makeCONST < bin_type > ( 0 );
+  if constexpr ( Op == ATOMIC_RELAX ) {
+    ret_ = atomicCAS ( addr, sup_, val_ );
+  }
+  if constexpr ( Op == ATOMIC_STRONG ) {
+    ret_ = atomicCAS_STRONG ( addr, sup_, val_ );
+  }
   T ret = const_binary_convert < T > ( ret_ );
 
   return ret;
@@ -161,9 +165,13 @@ __ATOMIC_OR__ ( T * address, T const val )
 
   bin_type * addr = reinterpret_cast < bin_type * > ( address );
   bin_type val_ = const_binary_convert < bin_type > ( val );
-  bin_type ret_ = ( Op == ATOMIC_RELAX ) ?
-    atomicOr ( addr, val_ ) :
-    atomicOr_STRONG ( addr, val_ );
+  bin_type ret_ = makeCONST < bin_type > ( 0 );
+  if constexpr ( Op == ATOMIC_RELAX ) {
+    ret_ = atomicOr ( addr, val_ );
+  }
+  if constexpr ( Op == ATOMIC_STRONG ) {
+    ret_ = atomicOr_STRONG ( addr, val_ );
+  }
   T ret = const_binary_convert < T > ( ret_ );
 
   return ret;
@@ -178,9 +186,13 @@ __ATOMIC_AND__ ( T * address, T const val )
 
   bin_type * addr = reinterpret_cast < bin_type * > ( address );
   bin_type val_ = const_binary_convert < bin_type > ( val );
-  bin_type ret_ = ( Op == ATOMIC_RELAX ) ?
-    atomicAnd ( addr, val_ ) :
-    atomicAnd_STRONG ( addr, val_ );
+  bin_type ret_ = makeCONST < bin_type > ( 0 );
+  if constexpr ( Op == ATOMIC_RELAX ) {
+    ret_ = atomicAnd ( addr, val_ );
+  }
+  if constexpr ( Op == ATOMIC_STRONG ) {
+    ret_ = atomicAnd_STRONG ( addr, val_ );
+  }
   T ret = const_binary_convert < T > ( ret_ );
 
   return ret;
@@ -194,10 +206,14 @@ __ATOMIC_LOAD__ ( T * address )
   static_assert ( ! std::is_same < bin_type, nullptr_t >::value );
 
   bin_type * addr = reinterpret_cast < bin_type * > ( address );
-  bin_type zero = 0;
-  bin_type ret_ = ( Op == ATOMIC_RELAX ) ?
-    atomicCAS ( addr, zero, zero ) :
-    atomicCAS_STRONG ( addr, zero, zero );
+  bin_type zero = makeCONST < bin_type > ( 0 );
+  bin_type ret_ = makeCONST < bin_type > ( 0 );
+  if constexpr ( Op == ATOMIC_RELAX ) {
+    ret_ = atomicCAS ( addr, zero, zero );
+  }
+  if constexpr ( Op == ATOMIC_STRONG ) {
+    ret_ = atomicCAS_STRONG ( addr, zero, zero );
+  }
   T ret = const_binary_convert < T > ( ret_ );
 
   return ret;
@@ -212,9 +228,13 @@ __ATOMIC_EXCH__ ( T * address, T const val )
 
   bin_type * addr = reinterpret_cast < bin_type * > ( address );
   bin_type val_ = const_binary_convert < bin_type > ( val );
-  bin_type ret_ = ( Op == ATOMIC_RELAX ) ?
-    atomicExch ( addr, val_ ) :
-    atomicExch_STRONG ( addr, val_ );
+  bin_type ret_ = makeCONST < bin_type > ( 0 );
+  if constexpr ( Op == ATOMIC_RELAX ) {
+    ret_ = atomicExch ( addr, val_ );
+  }
+  if constexpr ( Op == ATOMIC_STRONG ) {
+    ret_ = atomicExch_STRONG ( addr, val_ );
+  }
   T ret = const_binary_convert < T > ( ret_ );
 
   return ret;
@@ -269,25 +289,13 @@ __forceinline__ __device__ int128
 atomicCAS ( int128 * address, int128 const sup, int128 const val )
 {
   int128 expected = sup;
-  int128 desired  = val;
-#if ( __CUDA_ARCH__ >= 800 ) && ( __CUDA_ARCH__ < 900 )
-  uint64_t * addr = reinterpret_cast < uint64_t * > ( address );
-  uint64_t sup_[2];
-  sup_[0] = ((uint64_t*)&expected)[0];
-  sup_[1] = ((uint64_t*)&expected)[1];
-  uint64_t val_[2];
-  val_[0] = ((uint64_t*)&desired)[0];
-  val_[1] = ((uint64_t*)&desired)[1];
-  uint64_t ret_[2];
-  ret_[0] = atomicCAS ( addr, sup_[0], val_[0] );
-  ret_[1] = atomicCAS ( addr, sup_[1], val_[1] );
-  ((uint64_t*)&expected)[0] = ret_[0];
-  ((uint64_t*)&expected)[1] = ret_[1];
-#endif
 #if ( __CUDA_ARCH__ >= 900 )
+  int128 desired = val;
   bool status = __nv_atomic_compare_exchange (
                                               address, &expected, &desired,
                                               true, __NV_ATOMIC_RELAXED, __NV_ATOMIC_RELAXED, __NV_THREAD_SCOPE_SYSTEM );
+#else
+  assert( false );
 #endif
   return expected;
 }
@@ -311,14 +319,8 @@ CAS_template(cudfcomplex)
 __forceinline__ __device__ cuddcomplex
 atomicCAS ( cuddcomplex * address, cuddcomplex const sup, cuddcomplex const val )
 {
-  cuddcomplex_raw * addr =  reinterpret_cast < cuddcomplex_raw * > ( address );
-  cuddcomplex_raw sup_ = sup;
-  cuddcomplex_raw val_ = val;
-  cuddcomplex_raw ret_;
-  ret_.x = atomicCAS ( & addr->x, sup_.x, val_.x );
-  ret_.y = atomicCAS ( & addr->y, sup_.y, val_.y );
-  cuddcomplex ret = ret_;
-  return ret;
+  assert( false );
+  return makeCONST<cuddcomplex>(0);
 }
 #undef	CAS_template
 
@@ -394,25 +396,13 @@ __forceinline__ __device__ int128
 atomicCAS_STRONG ( int128 * address, int128 const sup, int128 const val )
 {
   int128 expected = sup;
-  int128 desired  = val;
-#if ( __CUDA_ARCH__ >= 800 ) && ( __CUDA_ARCH__ < 900 )
-  uint64_t * addr = reinterpret_cast < uint64_t * > ( address );
-  uint64_t sup_[2];
-  sup_[0] = ((uint64_t*)&expected)[0];
-  sup_[1] = ((uint64_t*)&expected)[1];
-  uint64_t val_[2];
-  val_[0] = ((uint64_t*)&desired)[0];
-  val_[1] = ((uint64_t*)&desired)[1];
-  uint64_t ret_[2];
-  ret_[0] = atomicCAS_STRONG ( addr, sup_[0], val_[0] );
-  ret_[1] = atomicCAS_STRONG ( addr, sup_[1], val_[1] );
-  ((uint64_t*)&expected)[0] = ret_[0];
-  ((uint64_t*)&expected)[1] = ret_[1];
-#endif
 #if ( __CUDA_ARCH__ >= 900 )
+  int128 desired = val;
   bool status = __nv_atomic_compare_exchange (
                                               address, &expected, &desired,
                                               true, __NV_ATOMIC_ACQ_REL, __NV_ATOMIC_ACQ_REL, __NV_THREAD_SCOPE_SYSTEM );
+#else
+  assert( false );
 #endif
   return expected;
 }
@@ -438,14 +428,8 @@ CAS_STRONG_template(cudfcomplex)
 __forceinline__ __device__ cuddcomplex
 atomicCAS_STRONG ( cuddcomplex * address, cuddcomplex const sup, cuddcomplex const val )
 {
-  cuddcomplex_raw * addr =  reinterpret_cast < cuddcomplex_raw * > ( address );
-  cuddcomplex_raw sup_ = sup;
-  cuddcomplex_raw val_ = val;
-  cuddcomplex_raw ret_;
-  ret_.x = atomicCAS_STRONG ( & addr->x, sup_.x, val_.x );
-  ret_.y = atomicCAS_STRONG ( & addr->y, sup_.y, val_.y );
-  cuddcomplex ret = ret_;
-  return ret;
+  assert( false );
+  return makeCONST<cuddcomplex>(0);
 }
 #undef	CAS_STRONG_template
 
@@ -857,13 +841,8 @@ Exch_template(cudfcomplex)
 __forceinline__ __device__ cuddcomplex
 atomicExch ( cuddcomplex * address, cuddcomplex const val )
 {
-  cuddcomplex_raw * addr =  reinterpret_cast < cuddcomplex_raw * > ( address );
-  cuddcomplex_raw val_ = val;
-  cuddcomplex_raw ret_;
-  ret_.x = atomicExch ( & addr->x, val_.x );
-  ret_.y = atomicExch ( & addr->y, val_.y );
-  cuddcomplex ret = ret_;
-  return ret;
+  assert( false );
+  return makeCONST<cuddcomplex>(0);
 }
 #undef	Exch_template
 #undef	Exch_loop_template
@@ -979,13 +958,8 @@ Exch_template(cudfcomplex)
 __forceinline__ __device__ cuddcomplex
 atomicExch_STRONG ( cuddcomplex * address, cuddcomplex const val )
 {
-  cuddcomplex_raw * addr =  reinterpret_cast < cuddcomplex_raw * > ( address );
-  cuddcomplex_raw val_ = val;
-  cuddcomplex_raw ret_;
-  ret_.x = atomicExch_STRONG ( & addr->x, val_.x );
-  ret_.y = atomicExch_STRONG ( & addr->y, val_.y );
-  cuddcomplex ret = ret_;
-  return ret;
+  assert( false );
+  return makeCONST<cuddcomplex>(0);
 }
 #undef	Exch_template
 #undef	Exch_loop_template
@@ -1106,7 +1080,11 @@ Red_loop_template(cuDoubleComplex)
 // cudfcomplex
 Red_loop_template(cudfcomplex)
 // cuddcomplex
-Red_loop_template(cuddcomplex)
+__forceinline__ __device__ void
+atomicRed ( cuddcomplex * address, cuddcomplex const val )
+{
+  assert( false );
+}
 #undef	Red_loop_template
 
 
@@ -1238,16 +1216,20 @@ Red_loop_template(cuDoubleComplex)
 // cudfcomplex
 Red_loop_template(cudfcomplex)
 // cuddcomplex
-Red_loop_template(cuddcomplex)
+__forceinline__ __device__ void
+atomicRed_STRONG ( cuddcomplex * address, cuddcomplex const val )
+{
+  assert( false );
+}
 #undef	Red_loop_template
 
 
 //--------------------------------------------------------
-// Red_WEAKER
+// Red_SPLIT
 //--------------------------------------------------------
 #define	Red_template(TYPE)                              \
   __forceinline__ __device__ void                       \
-  atomicRed_WEAKER ( TYPE * address, TYPE const val )   \
+  atomicRed_SPLIT ( TYPE * address, TYPE const val )   \
   {                                                     \
     atomicRed ( address, val );                         \
   }
@@ -1275,25 +1257,19 @@ Red_template(float)
 Red_template(double)
 // cudfreal
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cudfreal * address, cudfreal const val )
+atomicRed_SPLIT ( cudfreal * address, cudfreal const val )
 {
-  cudfreal_raw * addr = reinterpret_cast < cudfreal_raw * >( address );
-  cudfreal_raw val_ = val;
-  atomicRed ( & addr->x, val_.x );
-  atomicRed ( & addr->y, val_.y );
+  assert( false );
 }
 // cuddreal
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cuddreal * address, cuddreal const val )
+atomicRed_SPLIT ( cuddreal * address, cuddreal const val )
 {
-  cuddreal_raw * addr = reinterpret_cast < cuddreal_raw * >( address );
-  cuddreal_raw val_ = val;
-  atomicRed ( & addr->x, val_.x );
-  atomicRed ( & addr->y, val_.y );
+  assert( false );
 }
 // cuHalfComplex
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cuHalfComplex * address, cuHalfComplex const val )
+atomicRed_SPLIT ( cuHalfComplex * address, cuHalfComplex const val )
 {
 #if ( __CUDA_ARCH__ >= 800 ) && ( __CUDA_ARCH__ < 900 )
   cuHalfComplex_raw * addr = reinterpret_cast < cuHalfComplex_raw * >( address );
@@ -1311,29 +1287,27 @@ atomicRed_WEAKER ( cuHalfComplex * address, cuHalfComplex const val )
 }
 // cuFloatComplex
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cuFloatComplex * address, cuFloatComplex const val )
+atomicRed_SPLIT ( cuFloatComplex * address, cuFloatComplex const val )
 {
 #if ( __CUDA_ARCH__ >= 800 ) && ( __CUDA_ARCH__ < 900 )
   atomicRed ( & address->x, val.x );
   atomicRed ( & address->y, val.y );
 #endif
 #if ( __CUDA_ARCH__ >= 900 )
-  asm volatile ( "{\t.reg.f32\t%rx,%ry;\n\t"
-                 "red.add.v2.f32\t{%rx,%ry), [%0], {%1,%2};\n\t"
-                 "}"
+  asm volatile ( "red.add.v2.f32\t[%0], {%1,%2};"
                  : : "l"(address), "f"(val.x),"f"(val.y) );
 #endif
 }
 // cuDoubleComplex
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cuDoubleComplex * address, cuDoubleComplex const val )
+atomicRed_SPLIT ( cuDoubleComplex * address, cuDoubleComplex const val )
 {
   atomicRed ( & address->x, val.x );
   atomicRed ( & address->y, val.y );
 }
 // cudfcomplex
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cudfcomplex * address, cudfcomplex const val )
+atomicRed_SPLIT ( cudfcomplex * address, cudfcomplex const val )
 {
   cudfcomplex_raw * addr = reinterpret_cast < cudfcomplex_raw * >( address );
   cudfcomplex_raw val_ = val;
@@ -1342,7 +1316,7 @@ atomicRed_WEAKER ( cudfcomplex * address, cudfcomplex const val )
 }
 // cuddcomplex
 __forceinline__ __device__ void
-atomicRed_WEAKER ( cuddcomplex * address, cuddcomplex const val )
+atomicRed_SPLIT ( cuddcomplex * address, cuddcomplex const val )
 {
   cuddcomplex_raw * addr = reinterpret_cast < cuddcomplex_raw * >( address );
   cuddcomplex_raw val_ = val;
@@ -1353,13 +1327,13 @@ atomicRed_WEAKER ( cuddcomplex * address, cuddcomplex const val )
 
 
 //--------------------------------------------------------
-// Red_WEAK
+// Red_SPLIT_STRONG
 //--------------------------------------------------------
 #define	Red_template(TYPE)                              \
   __forceinline__ __device__ void                       \
-  atomicRed_WEAK ( TYPE * address, TYPE const val )     \
+  atomicRed_SPLIT_STRONG ( TYPE * address, TYPE const val )     \
   {                                                     \
-    atomicRed ( address, val );                         \
+    atomicRed_STRONG ( address, val );                  \
   }
 // uint16_t
 Red_template(uint16_t)
@@ -1385,30 +1359,24 @@ Red_template(float)
 Red_template(double)
 // cudfreal
 __forceinline__ __device__ void
-atomicRed_WEAK ( cudfreal * address, cudfreal const val )
+atomicRed_SPLIT_STRONG ( cudfreal * address, cudfreal const val )
 {
-  cudfreal_raw * addr = reinterpret_cast < cudfreal_raw * >( address );
-  cudfreal_raw val_ = val;
-  atomicRed_STRONG ( & addr->x, val_.x );
-  atomicRed_STRONG ( & addr->y, val_.y );
+  assert( false );
 }
 // cuddreal
 __forceinline__ __device__ void
-atomicRed_WEAK ( cuddreal * address, cuddreal const val )
+atomicRed_SPLIT_STRONG ( cuddreal * address, cuddreal const val )
 {
-  cuddreal_raw * addr = reinterpret_cast < cuddreal_raw * >( address );
-  cuddreal_raw val_ = val;
-  atomicRed_STRONG ( & addr->x, val_.x );
-  atomicRed_STRONG ( & addr->y, val_.y );
+  assert( false );
 }
 // cuHalfComplex
 __forceinline__ __device__ void
-atomicRed_WEAK ( cuHalfComplex * address, cuHalfComplex const val )
+atomicRed_SPLIT_STRONG ( cuHalfComplex * address, cuHalfComplex const val )
 {
 #if ( __CUDA_ARCH__ >= 800 ) && ( __CUDA_ARCH__ < 900 )
   cuHalfComplex_raw * addr = reinterpret_cast < cuHalfComplex_raw * >( address );
   cuHalfComplex_raw val_ = val;
-  atomicRed_STRONG ( & addr->x, val_.x );
+  atomicRed        ( & addr->x, val_.x );
   atomicRed_STRONG ( & addr->y, val_.y );
 #endif
 #if ( __CUDA_ARCH__ >= 900 )
@@ -1421,10 +1389,10 @@ atomicRed_WEAK ( cuHalfComplex * address, cuHalfComplex const val )
 }
 // cuFloatComplex
 __forceinline__ __device__ void
-atomicRed_WEAK ( cuFloatComplex * address, cuFloatComplex const val )
+atomicRed_SPLIT_STRONG ( cuFloatComplex * address, cuFloatComplex const val )
 {
 #if ( __CUDA_ARCH__ >= 800 ) && ( __CUDA_ARCH__ < 900 )
-  atomicRed_STRONG ( & address->x, val.x );
+  atomicRed        ( & address->x, val.x );
   atomicRed_STRONG ( & address->y, val.y );
 #endif
 #if ( __CUDA_ARCH__ >= 900 )
@@ -1434,27 +1402,27 @@ atomicRed_WEAK ( cuFloatComplex * address, cuFloatComplex const val )
 }
 // cuDoubleComplex
 __forceinline__ __device__ void
-atomicRed_WEAK ( cuDoubleComplex * address, cuDoubleComplex const val )
+atomicRed_SPLIT_STRONG ( cuDoubleComplex * address, cuDoubleComplex const val )
 {
-  atomicRed_STRONG ( & address->x, val.x );
+  atomicRed        ( & address->x, val.x );
   atomicRed_STRONG ( & address->y, val.y );
 }
 // cudfcomplex
 __forceinline__ __device__ void
-atomicRed_WEAK ( cudfcomplex * address, cudfcomplex const val )
+atomicRed_SPLIT_STRONG ( cudfcomplex * address, cudfcomplex const val )
 {
   cudfcomplex_raw * addr = reinterpret_cast < cudfcomplex_raw * >( address );
   cudfcomplex_raw val_ = val;
-  atomicRed_STRONG ( & addr->x, val_.x );
+  atomicRed        ( & addr->x, val_.x );
   atomicRed_STRONG ( & addr->y, val_.y );
 }
 // cuddcomplex
 __forceinline__ __device__ void
-atomicRed_WEAK ( cuddcomplex * address, cuddcomplex const val )
+atomicRed_SPLIT_STRONG ( cuddcomplex * address, cuddcomplex const val )
 {
   cuddcomplex_raw * addr = reinterpret_cast < cuddcomplex_raw * >( address );
   cuddcomplex_raw val_ = val;
-  atomicRed_STRONG ( & addr->x, val_.x );
+  atomicRed        ( & addr->x, val_.x );
   atomicRed_STRONG ( & addr->y, val_.y );
 }
 #undef	Red_template

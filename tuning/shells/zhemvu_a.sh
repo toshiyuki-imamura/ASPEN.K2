@@ -210,12 +210,13 @@ Setup()
 	awk ' \
 		BEGIN{ \
 			print "int done = 0;"; \
+			print "int constexpr REPRO = 1;"; \
 			print "switch (BLK) {"; \
 			for ( i=1; i <= 100*'$MM_MAX'; i+=10 ) { \
 				print "#if __KERNEL"i; \
 				print "case "i":"; \
 				print "done = "; \
-				print "\tAPI_private(HESYMVu_ATOMIC__host) < GPU_ARCH, scalar_t, BLOCK_SIZE, GY2D, VX, UX, "int((i-1)/100)+1", "(i-1)%100" >"; \
+				print "\tAPI_private(HESYMVu_ATOMIC__host) < REPRO, scalar_t, BLOCK_SIZE, GY2D, VX, UX, "int((i-1)/100)+1", "(i-1)%100" >"; \
 				print "\t( n, a, lda, x, incx, y, incy, alpha, beta ); break;"; \
 				print "#endif" \
 			} \
@@ -971,11 +972,12 @@ if [ x$ASPEN_TUNING_LEVEL = xFULL ]; then
 fi
 
 #######
+	# $5 >= 1 is too strict, $2 >= 2 is progmatic
 	cat log-regs-$BLOCK_SIZE-$VX | \
-		awk '/##/{ if ( $5 >= 1 && $11 ) print $4 }' | \
+		awk '/##/{ if ( $5 >= 2 && $11 ) print $4 }' | \
 		sort -S 1G -r -g | \
 		head -$NK | awk '{printf("%d\n",$0) }END{print 0}' > UUU-0
-	UU_MIN=`cat UUU-0 | awk '{ v='$VX'; x=2*v; y=int(($1/v+1)/2)*v; if(x<y)x=y; printf("%d\n",x);exit;}'`
+	UU_MIN=`cat UUU-0 | awk '{ v='$VX'; x=v; y=int((5*$1/v)/6)*v; if(x<y)x=y; printf("%d\n",x);exit;}'`
 	echo '# UU_MIN='$UU_MIN
 #######
 

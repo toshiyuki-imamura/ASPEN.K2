@@ -3,7 +3,7 @@
 
 #  if defined(GPU_ARCH)
 
-#    if GPU_ARCH == Tesla || GPU_ARCH == Fermi || GPU_ARCH == Kepler || GPU_ARCH == Kepler2 || GPU_ARCH == Kepler3 || GPU_ARCH == Maxwell
+#    if GPU_ARCH == Tesla || GPU_ARCH == Fermi || GPU_ARCH == Kepler || GPU_ARCH == Kepler2 || GPU_ARCH == Kepler3 || GPU_ARCH == Maxwell || GPU_ARCH == Maxwell2 || GPU_ARHC == Maxwell3 || GPU_ARCH == Pascal || GPU_ARCH == Pascal1 || GPU_ARCH == Pascal2 || GPU_ARCH == Volta || GPU_ARCH == Turing
 /*
  * obsolated architectures. not supported
  */
@@ -358,7 +358,7 @@ error
 
 #    if GPU_ARCH == Blackwell2
 // 1200
-// Hopper (GB20X)
+// Blackwell (GB20X)
 #      define	GPU_PREFIX		BLACKWELL2
 #      define	MAX_THREAD_BLOCKS       (32)
 #      define	MAX_REGS_PER_BLOCK	(65536)

@@ -152,10 +152,6 @@ get_mult48.o: get_mult48.c
 GET_NVOPTIONS_BASE=`awk '{ sm=$$3/10; print "--gpu-architecture=sm_"sm" --generate-code arch=compute_"sm",code=compute_"sm" --generate-code arch=compute_"sm",code=sm_"sm; }' $(CURRENT_GPU)` --define-macro CURRENT_GPU=`awk '{ print $$3}' $(CURRENT_GPU)`
 GET_NVOPTIONS_ALLS=\
 	--gpu-architecture=sm_`awk '{ print $$3/10; }' $(CURRENT_GPU)` \
-	--generate-code arch=compute_80,code=compute_80 \
-	--generate-code arch=compute_80,code=sm_80 \
-	--generate-code arch=compute_86,code=compute_86 \
-	--generate-code arch=compute_86,code=sm_86 \
 	--generate-code arch=compute_89,code=compute_89 \
 	--generate-code arch=compute_89,code=sm_89 \
 	--generate-code arch=compute_90,code=compute_90 \

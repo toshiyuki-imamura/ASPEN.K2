@@ -78,9 +78,16 @@ GetPState_on_GPU( const nvmlDevice_t device )
 double
 GetTemperature_on_GPU( const nvmlDevice_t device )
 {
+#if NVML_API_VERSION >= 12000
+  nvmlThermalSettings_t ts;
+  ts.version = NVML_THERMAL_SETTINGS_VER;
+  nvmlDeviceGetThermalSettings( device, NVML_TEMPERATURE_GPU, &ts );
+  return (double)ts.defaultTemprature;
+#else
   unsigned int temp;
   nvmlDeviceGetTemperature( device, NVML_TEMPERATURE_GPU, &temp );
   return (double)temp;
+#endif
 }
 
 

@@ -9,17 +9,24 @@ ifneq (x$(wildcard $(MKLROOT)),x)
 
 CBLASDIR = $(MKLROOT)
 CBLASLDFLAG = \
-	-Wl,-rpath,$(MKLROOT)/lib/intel64 -L$(MKLROOT)/lib/intel64 \
+	-Wl,-rpath,'$(MKLROOT)/lib/intel64' \
+	-L$(MKLROOT)/lib/intel64 \
 	-Wl,--no-as-needed \
-	-lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core -lgomp -lpthread -lm -ldl
+	-lmkl_gf_lp64 -lmkl_gnu_thread -lmkl_core \
+	-lgomp -lpthread -lm -ldl \
+	-Wl,--as-needed
 CCFLAGS := $(CCFLAGS) -DUSE_MKL
 
 else
 ifneq (x$(wildcard $(OPENBLAS_DIR)),x)
 
 CBLASDIR = $(OPENBLAS_DIR)
-CBLASLDFLAG = -Wl,-rpath,$(OPENBLAS_DIR)/lib -L$(OPENBLAS_DIR)/lib \
-	-Wl,--no-as-needed -lopenblas -lm
+CBLASLDFLAG = \
+	-Wl,-rpath,'$(OPENBLAS_DIR)/lib' \
+	-L$(OPENBLAS_DIR)/lib \
+	-Wl,--no-as-needed \
+	-lopenblas -lm \
+	-Wl,--as-needed
 CCFLAGS := $(CCFLAGS) -I$(OPENBLAS_DIR)/include
 
 else
@@ -69,14 +76,28 @@ INCPATH  = -I$(CUDADIR)/include -I$(CBLASDIR)/include \
 
 
 ASPEN_LDFLAG = \
-	-Wl,-rpath,$(ASPENDIR)/lib -L$(ASPENDIR)/lib -laspen \
-	-Wl,-rpath,$(CBLASDIR)     -L$(CBLASDIR)     $(CBLASLDFLAG)
+	-Wl,-rpath,'$(ASPENDIR)/lib' \
+	-L$(ASPENDIR)/lib \
+	-Wl,--no-as-needed \
+	-laspen \
+	-Wl,--as-needed \
+	-Wl,-rpath,'$(CBLASDIR)' \
+	-L$(CBLASDIR) \
+	 $(CBLASLDFLAG)
 CUDA_LDFLAG  = \
-	-Wl,-rpath,$(CUDADIR)/lib64 \
-	-L$(CUDADIR)/lib64 -lcudart \
+	-Wl,-rpath,'$(CUDADIR)/lib64' \
+	-L$(CUDADIR)/lib64 \
+	-Wl,--no-as-needed \
+	-lcudart \
+	-Wl,--as-needed \
+	-Wl,-rpath,'$(CUDADIR)/../math_libs/lib64' \
 	-L$(CUDADIR)/../math_libs/lib64 \
+	-Wl,--no-as-needed \
 	-lcublas -lcublasLt -lcusparse -lcusolver \
-	-lnvidia-ml  -L$(CUDADIR)/lib64/stubs -lnvidia-ml
+	-lnvidia-ml \
+	-Wl,--as-needed \
+	-L$(CUDADIR)/lib64/stubs \
+	-lnvidia-ml
 MAGMA_LDFLAG = -L$(MAGMADIR)/lib  -lmagma  -lmkl_rt
 KBLAS_LDFLAG = -L$(KBLASDIR)/lib  -lkblas-gpu
 

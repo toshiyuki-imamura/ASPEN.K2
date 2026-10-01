@@ -2,6 +2,7 @@
     README file for ASPEN.K2
 ------------------------------------------------------------------------------
 
+VERSION 1.13/Kanaya      : Oct.    2, 2026
 VERSION 1.12/Shimada     : August 11, 2026
 VERSION 1.11/Fujieda     : May     1, 2026
 VERSION 1.10/Okabe       : April  22, 2024
@@ -87,6 +88,10 @@ See the copyright form 'LICENCE.txt'.
 
 
 ** Release information
+
+Version 1.13:
+Experimental support of CUDA 13.4.
+Introduced a global block counter insted of using blockIdx.x
 
 Version 1.12:
 Experimental support of CUDA 13.3. and Blackwell generations.

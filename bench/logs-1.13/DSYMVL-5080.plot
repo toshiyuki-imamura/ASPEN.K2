@@ -1,0 +1,16 @@
+#DSYMVL#5080#GeForce RTX5080set key bottom
+set grid
+set pointsize 0.3
+set yrange [0:]
+set title "DSYMVL on a <GeForce RTX5080>"
+set xlabel "[dimension]"
+set ylabel "[GFLOPS]"
+set term post eps color
+set output "plot-data-5080-DSYMVL.eps"
+plot   "log-ASPEN.K2-1.13-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" u 2:($5<2*451.434?$5:-1000) t "log-ASPEN.K2-1.13-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" , "log-CUDA-13.4-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" u 2:($5<2*451.434?$5:-1000) t "log-CUDA-13.4-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" , "log-CUDA-13.4-DSYMVLnoAtomic-RTX5080-615.71.09-2026:09:28-00:54:12" u 2:($5<2*451.434?$5:-1000) t "log-CUDA-13.4-DSYMVLnoAtomic-RTX5080-615.71.09-2026:09:28-00:54:12" 
+clear
+set term png
+set output "plot-data-5080-DSYMVL.png"
+plot   "log-ASPEN.K2-1.13-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" u 2:($5<2*451.434?$5:-1000) t "log-ASPEN.K2-1.13-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" , "log-CUDA-13.4-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" u 2:($5<2*451.434?$5:-1000) t "log-CUDA-13.4-DSYMVL-RTX5080-615.71.09-2026:09:28-00:54:12" , "log-CUDA-13.4-DSYMVLnoAtomic-RTX5080-615.71.09-2026:09:28-00:54:12" u 2:($5<2*451.434?$5:-1000) t "log-CUDA-13.4-DSYMVLnoAtomic-RTX5080-615.71.09-2026:09:28-00:54:12" 
+clear
+exit

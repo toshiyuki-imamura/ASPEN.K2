@@ -11,11 +11,11 @@ if [ x"$ASPEN_GPU_ID" = x ]; then
 fi
 
 BUILD=`date '+%Y%m%d.%H%M%S'`
-WORK=ASPEN.K2-1.12
+WORK=ASPEN.K2-1.13
 
 LD_PATH_OLD=$LD_LIBRARY_PATH
 
-export CUDA_PATH=/usr/local/cuda-13.3
+export CUDA_PATH=/usr/local/cuda-13.4
 if [ x"$LD_PATH_OLD" = x ]; then
 	export LD_LIBRARY_PATH=$CUDA_PATH/lib64
 else
@@ -37,7 +37,7 @@ fi
 
 cd $WORK
 
-CUDA=13030
+CUDA=13040
 VERSION=`echo $CUDA | awk '{ v=$1; s=int(v/100); m=int(v-s*100); s=int(s/10); m=int(m/10); print s"."m; }'`
 
 export CUDA_PATH=/usr/local/cuda-$VERSION
@@ -56,7 +56,7 @@ cd ..
 
 export ASPEN_TUNING_LEVEL=DEFAULT
 
-CUDA_list='13030'
+CUDA_list='13040'
 
 for CUDA in \
 	$CUDA_list
@@ -75,12 +75,7 @@ fi
 	make
 	export GPU=`awk '/DEVICE=/{ print $2; }' tuning/DEV_INFO`
 
-	make keepP2
-	/bin/bash etc/keepP2.sh
-
 	make tuned-new-symv tuned-new-hemv |& tee log-newkernel-$GPU-$CUDA
-
-	killall -9 keepP2
 
 	cd tuning
 	if [ ! -e tuning-old/$GPU ]; then
@@ -96,7 +91,7 @@ export ASPEN_TUNING_LEVEL=ROUGH
 
 done
 
-export CUDA_PATH=/usr/local/cuda-13.3
+export CUDA_PATH=/usr/local/cuda-13.4
 if [ x"$LD_PATH_OLD" = x ]; then
 	export LD_LIBRARY_PATH=$CUDA_PATH/lib64
 else
@@ -117,7 +112,7 @@ make
 export XGPU=`echo $GPU | awk '/DEVICE/{ gsub(/^[A-Za-z0-9]*-/,"",$2); gsub(/-/,""); print $2; }'`
 /bin/sh ./exe.sh
 
-LOG_ARCHIVE=logs-1.12
+LOG_ARCHIVE=logs-1.13
 if [ ! -e $LOG_ARCHIVE ]; then
 	mkdir $LOG_ARCHIVE
 fi

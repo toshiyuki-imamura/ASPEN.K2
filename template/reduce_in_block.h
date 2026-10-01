@@ -304,10 +304,10 @@ reduce_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     x0 = reduce_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                     x0, threadIdx_x, w_offset, z_offset );
+                                                          x0, threadIdx_x, w_offset, z_offset );
   } else {
     x0 = reduce_in_block_power2_multiple32 < TYPE, BLOCK_SIZE > (
-                                            x0, threadIdx_x, w_offset, z_offset );
+                                                                 x0, threadIdx_x, w_offset, z_offset );
   }
   return x0;
 }
@@ -392,10 +392,10 @@ reduce2_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce2_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, threadIdx_x, w_offset, z_offset+0 );
   } else {
     reduce2_in_block_power2_multiple32 < TYPE, BLOCK_SIZE > (
-                                        x0, x1, threadIdx_x, w_offset, z_offset+0 );
+                                                             x0, x1, threadIdx_x, w_offset, z_offset+0 );
   }
 
 }
@@ -413,9 +413,9 @@ reduce3_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce2_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, threadIdx_x, w_offset, z_offset+0 );
     reduce_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                x2, threadIdx_x, w_offset, z_offset+2 );
+                                                     x2, threadIdx_x, w_offset, z_offset+2 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }
@@ -513,7 +513,7 @@ reduce4_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce4_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }
@@ -562,9 +562,9 @@ reduce5_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce4_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
     reduce_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                x4, threadIdx_x, w_offset, z_offset+4 );
+                                                     x4, threadIdx_x, w_offset, z_offset+4 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }
@@ -617,9 +617,9 @@ reduce6_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce4_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
     reduce2_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x4, x5, threadIdx_x, w_offset, z_offset+4 );
+                                                      x4, x5, threadIdx_x, w_offset, z_offset+4 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }
@@ -672,11 +672,11 @@ reduce7_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce4_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, x2, x3, threadIdx_x, w_offset, z_offset+0 );
     reduce2_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x4, x5, threadIdx_x, w_offset, z_offset+4 );
+                                                      x4, x5, threadIdx_x, w_offset, z_offset+4 );
     reduce_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                x6, threadIdx_x, w_offset, z_offset+6 );
+                                                     x6, threadIdx_x, w_offset, z_offset+6 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }
@@ -816,8 +816,8 @@ reduce8_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce8_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, x2, x3, x4, x5, x6, x7,
-                                 threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, x2, x3, x4, x5, x6, x7,
+                                                      threadIdx_x, w_offset, z_offset+0 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }
@@ -877,10 +877,10 @@ reduce9_in_block (
 
   if (  __popc(BLOCK_SIZE) > 1 && (BLOCK_SIZE % 32) ) {
     reduce8_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                 x0, x1, x2, x3, x4, x5, x6, x7,
-                                 threadIdx_x, w_offset, z_offset+0 );
+                                                      x0, x1, x2, x3, x4, x5, x6, x7,
+                                                      threadIdx_x, w_offset, z_offset+0 );
     reduce_in_block_non_power2 < TYPE, BLOCK_SIZE > (
-                                x8, threadIdx_x, w_offset, z_offset+8 );
+                                                     x8, threadIdx_x, w_offset, z_offset+8 );
   } else {
 
     if ( BLOCK_SIZE > 32 ) { __syncthreads ( ); }

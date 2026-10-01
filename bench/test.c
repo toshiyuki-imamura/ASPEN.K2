@@ -631,6 +631,7 @@ main(int argc, char *argv[])
 
   for(int Itr = 0; fscanf(fp,"%d", &N) > 0; Itr++ ) {
 
+    if ( N == 0 ) continue;
     if ( N < 1 ) break;
     if ( N > N_max ) { N = N_max; if ( overflow++ ) continue; }
     if ( N > 50000 ) { continue; }
@@ -655,6 +656,7 @@ main(int argc, char *argv[])
       if(C!=NULL) free(C);
       if(D!=NULL) free(D);
       if(X!=NULL) free(X);
+      fprintf(stderr, "# Fail to allocate Host_arra\n");
       goto HHH;
     }
 

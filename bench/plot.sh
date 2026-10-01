@@ -1,7 +1,7 @@
 #/bin/sh
 
 for Dev in \
-	A100_SXM_80GB A100_SXM4_40GB V100_PCIE_32GB TITAN_V P100_SXM2_16GB 3090 2080 1080 750 A5000 A6000
+	GB200 GH200_480GB A100_SXM_80GB A100_SXM4_40GB V100_PCIE_32GB TITAN_V P100_SXM2_16GB 5080 4080 3090 2080 1080 750 A5000 A6000
 do
 for SYMV in \
 	DSYMVU DSYMVL SSYMVU SSYMVL ZHEMVU ZHEMVL CHEMVU CHEMVL 
@@ -42,14 +42,22 @@ do
 			if ( D == "TITAN" ) DEV="GeForce TitanBlack"; \
 			if ( D == "2080"  ) DEV="GeForce RTX2080Ti"; \
 			if ( D == "3090"  ) DEV="GeForce RTX3090"; \
+			if ( D == "4080"  ) DEV="GeForce RTX4080"; \
+			if ( D == "5080"  ) DEV="GeForce RTX5080"; \
 			if ( D == "K20c"  ) DEV="Tesla K20c"; \
 			if ( D == "K20Xm" ) DEV="Tesla K20Xm"; \
 			if ( D == "P100_SXM2_16GB" ) DEV="Tesla P100 16GB"; \
 			if ( D == "TITAN_V" ) DEV="TITAN-V"; \
 			if ( D == "V100_PCIE_32GB" ) DEV="Tesla V100 32GB"; \
 			if ( D == "A100_SXM4_40GB" ) DEV="A100 40GB"; \
+			if ( D == "A100_SXM4_80GB" ) DEV="A100 80GB"; \
 			if ( D == "A5000"  ) DEV="RTX A5000"; \
 			if ( D == "A6000"  ) DEV="RTX A6000"; \
+			if ( D == "GH200_480GB"  ) DEV="GH200 1GPU"; \
+			if ( D == "GB200"  ) DEV="GB200 1GPU"; \
+			printf( "#"K ); \
+			printf( "#"D ); \
+			printf( "#"DEV ); \
 			printf( "set key bottom\n" ); \
 			printf( "set grid\n" ); \
 			printf( "set pointsize 0.3\n" ); \
