@@ -127,22 +127,24 @@ Ceiling( TYPE const x, TYPE const y )
 }
 
 template < class TYPE >
-__forceinline__ __device__ void
-ATOMIC_RED( TYPE * w_base, TYPE const R_Reg )
+__forceinline__ __device__ TYPE
+ATOMIC_ADD( TYPE * w_base, TYPE const R_Reg )
 {
+  TYPE ret;
 #if USE_SPLIT_ATOMIC
 #  if USE_STRONG_ATOM_ORDER
-  atomicRed_SPLIT_STRONG ( w_base, R_Reg );
+  ret = atomicAdd_SPLIT_STRONG ( w_base, R_Reg );
 #  else
-  atomicRed_SPLIT ( w_base, R_Reg );
+  ret = atomicAdd_SPLIT ( w_base, R_Reg );
 #  endif
 #else
 #  if USE_STRONG_ATOM_ORDER
-  atomicRed_STRONG ( w_base, R_Reg );
+  ret = atomicAdd_STRONG ( w_base, R_Reg );
 #  else
-  atomicRed        ( w_base, R_Reg );
+  ret = atomicAdd        ( w_base, R_Reg );
 #  endif
 #endif
+  return ret;
 }
 
 template < class TYPE >
@@ -198,6 +200,7 @@ HESYMV(get_global_id) ( )
   }
   __syncthreads();
   int const id = *((int *)__shmem);
+  __syncthreads();
   return id;
 }
 
@@ -1130,12 +1133,12 @@ __maxnreg__(96)
 #if USE_ATOMIC
 #  if KEEP_REPRO
                 if ( my_TicketS != NULL ) {
-                  ATOMIC_RED ( w_base, R_Reg );
+                  ATOMIC_ADD ( w_base, R_Reg );
                 } else {
-                  atomicRed_SPLIT ( w_base, R_Reg );
+                  atomicAdd_SPLIT ( w_base, R_Reg );
                 }
 #  else
-                atomicRed_SPLIT ( w_base, R_Reg );
+                atomicAdd_SPLIT ( w_base, R_Reg );
 #  endif
 #else
                 if ( isUPPER ? block_id < ARG(GX)-ARG(SG).x : block_id >= ARG(SG).x ) {
@@ -1162,7 +1165,7 @@ __maxnreg__(96)
                   __syncthreads(); __threadfence();
                 }
                 int const next_block = block_id - DELTAX(ARG(SG).x);
-                release_Ticket < USE_ATOMIC == 0 > ( my_TicketS, block_id, next_block );
+                release_Ticket ( my_TicketS, block_id, next_block );
                 my_TicketS += ( DELTAX((long)GY) );
               }
 #endif
@@ -1401,12 +1404,12 @@ __maxnreg__(96)
 #if USE_ATOMIC
 #  if KEEP_REPRO
           if ( my_TicketF != NULL ) {
-            ATOMIC_RED ( w_base, R_Reg );
+            ATOMIC_ADD ( w_base, R_Reg );
           } else {
-            atomicRed_SPLIT ( w_base, R_Reg );
+            atomicAdd_SPLIT ( w_base, R_Reg );
           }
 #  else
-          atomicRed_SPLIT ( w_base, R_Reg );
+          atomicAdd_SPLIT ( w_base, R_Reg );
 #  endif
 #else
           if ( block_y >= ARG(SG).y ) {
@@ -1432,7 +1435,7 @@ __maxnreg__(96)
             __syncthreads(); __threadfence();
           }
           int const next_block = block_y + ARG(SG).y;
-          release_Ticket < USE_ATOMIC == 0 > ( my_TicketF, block_y, next_block );
+          release_Ticket ( my_TicketF, block_y, next_block );
         }
 #endif
       }

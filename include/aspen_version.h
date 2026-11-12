@@ -2,9 +2,9 @@
 #  define ASPEN_VERSION_H_INCLUDED	1
 
 #  define	ASPEN_MAJOR_VERSION	1
-#  define	ASPEN_MINOR_VERSION	13
+#  define	ASPEN_MINOR_VERSION	14
 #  define	ASPEN_PATCH_LEVEL	0
-#  define	ASPEN_CODENAME		"Kanaya"
-#  define	ASPEN_RELEASE_DATE	"02,Oct.,2026"
+#  define	ASPEN_CODENAME		"Nissaka"
+#  define	ASPEN_RELEASE_DATE	"12,Nov.,2026"
 
 #endif

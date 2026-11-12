@@ -2,6 +2,7 @@
     README file for ASPEN.K2
 ------------------------------------------------------------------------------
 
+VERSION 1.14/Nissaka     : Nov.   12, 2026
 VERSION 1.13/Kanaya      : Oct.    2, 2026
 VERSION 1.12/Shimada     : August 11, 2026
 VERSION 1.11/Fujieda     : May     1, 2026
@@ -88,6 +89,10 @@ See the copyright form 'LICENCE.txt'.
 
 
 ** Release information
+
+Version 1.14:
+Experimental support of CUDA 13.5.
+Fixed both the ticketReelase and triangular kernels. Because they must be *always* strong order, former has been strongthend and latter changed using independent buffers.
 
 Version 1.13:
 Experimental support of CUDA 13.4.

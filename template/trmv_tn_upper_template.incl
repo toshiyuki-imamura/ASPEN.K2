@@ -9,7 +9,8 @@ API_private(TRMV_Upper_SYMV_post) (
                                    int const n,
                                    TYPE const  alpha,
                                    TYPE const  beta,
-                                   _ReadOnly_ptr_(TYPE) z,
+                                   _ReadOnly_ptr_(TYPE) z0,
+                                   _ReadOnly_ptr_(TYPE) z1,
                                    _Writable_ptr_(TYPE) y,
                                    int const incy
                                    )
@@ -19,13 +20,14 @@ API_private(TRMV_Upper_SYMV_post) (
     TYPE * const yy = y + row * incy;
     TYPE Y_Reg = makeCONST<TYPE>(0);
     if ( beta != Y_Reg ) { Y_Reg = beta * yy[0]; }
-    yy[0] = fma( alpha, z[row], Y_Reg );
+    TYPE Z_Reg = z0[row] + z1[row];
+    yy[0] = fma( alpha, Z_Reg, Y_Reg );
   }
 }
 
 //=============================================================================
 
-template < bool atomic_mode = true, class TYPE, int BLOCK_X, int BLOCK_Y >
+template < class TYPE, int BLOCK_X, int BLOCK_Y >
 __device__ __forceinline__ void
 API_private(TRMV_UpperN_SYMV) (
                                    int const n,
@@ -90,17 +92,13 @@ API_private(TRMV_UpperN_SYMV) (
         S_Reg += ((TYPE*)__shmem)[zid+i*BLOCK_X];
       }
     }
-    if constexpr ( atomic_mode ) {
-      atomicRed_SPLIT( z + row, S_Reg );
-    } else {
-      z[row] = z[row] + S_Reg;
-    }
+    z[row] += S_Reg;
   }
 }
 
 //=============================================================================
 
-template < bool atomic_mode = true, class TYPE, int BLOCK_X, int BLOCK_Y >
+template < class TYPE, int BLOCK_X, int BLOCK_Y >
 __device__ __forceinline__ void
 API_private(TRMV_UpperT_SYMV) (
                                    int const  n,
@@ -165,11 +163,7 @@ API_private(TRMV_UpperT_SYMV) (
         S_Reg += ((TYPE*)__shmem)[zid+i];
       }
     }
-    if constexpr ( atomic_mode ) {
-      atomicRed_SPLIT( z + row, S_Reg );
-    } else {
-      z[row] = z[row] + S_Reg;
-    }
+    z[row] += S_Reg;
   }
 }
 
@@ -188,24 +182,24 @@ API_private(TRMV_Upper_SYMV) (
 {
   if constexpr ( mode == 1 ) {
     API_private(TRMV_UpperN_SYMV)
-      < false, TYPE, BLOCK_NX, BLOCK_NY >
+      < TYPE, BLOCK_NX, BLOCK_NY >
       ( n, a, lda, x, incx, z, blockIdx.x );
   }
   if constexpr ( mode == 2 ) {
     API_private(TRMV_UpperT_SYMV)
-      < false, TYPE, BLOCK_TX, BLOCK_TY >
-      ( n, a, lda, x, incx, z, blockIdx.x );
+      < TYPE, BLOCK_TX, BLOCK_TY >
+      ( n, a, lda, x, incx, z+lda, blockIdx.x );
   }
   if constexpr ( mode == 3 ) {
   int const block_size = gridDim.x/2;
   if ( blockIdx.x < block_size ) {
     API_private(TRMV_UpperN_SYMV)
-      < true, TYPE, BLOCK_NX, BLOCK_NY >
+      < TYPE, BLOCK_NX, BLOCK_NY >
       ( n, a, lda, x, incx, z, blockIdx.x );
   } else {
     API_private(TRMV_UpperT_SYMV)
-      < true, TYPE, BLOCK_TX, BLOCK_TY >
-      ( n, a, lda, x, incx, z, blockIdx.x-block_size );
+      < TYPE, BLOCK_TX, BLOCK_TY >
+      ( n, a, lda, x, incx, z+lda, blockIdx.x-block_size );
   }
   }
 }
@@ -242,7 +236,7 @@ API(TRMV_tn_upper_host) (
   int const g2 = __isSPLITTABLE_FORMAT__ ? 2*g1 : g1;
 
   TYPE * z = (TYPE *)API(get_device_WorkArea)();
-  cudaMemsetAsync( z, 0, (size_t)n * sizeof(TYPE), stream );
+  cudaMemsetAsync( z, 0, 2*(size_t)lda * sizeof(TYPE), stream );
 
   int smem_per_block_optin = 0;
   cudaDeviceGetAttribute(&smem_per_block_optin,
@@ -287,7 +281,7 @@ if constexpr ( __isSPLITTABLE_FORMAT__ ) {
   API_private(TRMV_Upper_SYMV_post)
     < TYPE >
     <<< g0, t1, shmem_size, stream >>>
-    ( n, alpha, beta, z, y, incy );
+    ( n, alpha, beta, z, z+lda, y, incy );
 
 }
 
